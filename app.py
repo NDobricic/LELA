@@ -1,6 +1,10 @@
-import argparse
-import logging
 import os
+# Disable vLLM V1 engine before any imports - V1 uses multiprocessing that fails from worker threads
+os.environ["VLLM_USE_V1"] = "0"
+
+import argparse
+import importlib.util
+import logging
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -26,14 +30,29 @@ Swap components, configure parameters, and test with your own knowledge bases.
 """
 
 
+def _is_vllm_usable() -> bool:
+    """Check if vllm is installed and CUDA is available for it to run."""
+    if importlib.util.find_spec("vllm") is None:
+        return False
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
+
 def get_available_components() -> Dict[str, List[str]]:
     """Get list of available components from registries."""
+    available_disambiguators = list(disambiguators.available().keys())
+    if not _is_vllm_usable():
+        available_disambiguators = [d for d in available_disambiguators if d != "lela_vllm"]
+    
     return {
         "loaders": list(loaders.available().keys()),
         "ner": list(ner_models.available().keys()),
         "candidates": list(candidate_generators.available().keys()),
         "rerankers": ["none"] + list(rerankers.available().keys()),
-        "disambiguators": ["none"] + list(disambiguators.available().keys()),
+        "disambiguators": ["none"] + available_disambiguators,
         "knowledge_bases": list(knowledge_bases.available().keys()),
     }
 

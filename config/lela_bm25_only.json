@@ -1,0 +1,35 @@
+{
+  "loader": {
+    "name": "text",
+    "params": {}
+  },
+  "ner": {
+    "name": "lela_gliner",
+    "params": {
+      "model_name": "numind/NuNER_Zero-span",
+      "labels": ["person", "organization", "location"],
+      "threshold": 0.5
+    }
+  },
+  "candidate_generator": {
+    "name": "lela_bm25",
+    "params": {
+      "top_k": 64,
+      "use_context": true
+    }
+  },
+  "reranker": {
+    "name": "none",
+    "params": {}
+  },
+  "disambiguator": {
+    "name": "first",
+    "params": {}
+  },
+  "knowledge_base": {
+    "name": "lela_jsonl",
+    "params": {
+      "path": "entities.jsonl"
+    }
+  }
+}

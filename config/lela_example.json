@@ -1,0 +1,49 @@
+{
+  "loader": {
+    "name": "text",
+    "params": {}
+  },
+  "ner": {
+    "name": "lela_gliner",
+    "params": {
+      "model_name": "numind/NuNER_Zero-span",
+      "labels": ["person", "organization", "location"],
+      "threshold": 0.5
+    }
+  },
+  "candidate_generator": {
+    "name": "lela_bm25",
+    "params": {
+      "top_k": 64,
+      "use_context": true,
+      "stemmer_language": "english"
+    }
+  },
+  "reranker": {
+    "name": "lela_embedder",
+    "params": {
+      "model_name": "Qwen/Qwen3-Embedding-4B",
+      "top_k": 10,
+      "base_url": "http://localhost",
+      "port": 8000
+    }
+  },
+  "disambiguator": {
+    "name": "lela_vllm",
+    "params": {
+      "model_name": "Qwen/Qwen3-8B",
+      "tensor_parallel_size": 1,
+      "add_none_candidate": true,
+      "add_descriptions": true,
+      "disable_thinking": false
+    }
+  },
+  "knowledge_base": {
+    "name": "lela_jsonl",
+    "params": {
+      "path": "entities.jsonl",
+      "title_field": "title",
+      "description_field": "description"
+    }
+  }
+}
