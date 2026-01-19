@@ -137,10 +137,11 @@ def get_vllm_instance(
             "model": model_name,
             "tensor_parallel_size": tensor_parallel_size,
             "enforce_eager": True,  # Disable CUDA graphs to avoid multiprocessing issues
+            "dtype": "half",  # Use float16 for P100 compatibility (compute capability 6.0)
+            "max_model_len": max_model_len or 8192,  # Limit context for 16GB VRAM
+            "gpu_memory_utilization": 0.9,
             **kwargs,
         }
-        if max_model_len is not None:
-            llm_kwargs["max_model_len"] = max_model_len
 
         logger.info(f"Loading vLLM model: {model_name}")
         _vllm_instances[key] = vllm.LLM(**llm_kwargs)

@@ -13,47 +13,46 @@ import gradio as gr
 
 from ner_pipeline.config import PipelineConfig
 from ner_pipeline.pipeline import NERPipeline
-from ner_pipeline.registry import (
-    candidate_generators,
-    disambiguators,
-    knowledge_bases,
-    loaders,
-    ner_models,
-    rerankers,
-)
 
 DESCRIPTION = """
 # NER Pipeline 🔗
 
-Modular NER → candidate generation → rerank → disambiguation pipeline. 
+Modular NER → candidate generation → rerank → disambiguation pipeline built on spaCy. 
 Swap components, configure parameters, and test with your own knowledge bases.
 """
 
 
 def _is_vllm_usable() -> bool:
     """Check if vllm is installed and CUDA is available for it to run."""
-    if importlib.util.find_spec("vllm") is None:
-        return False
+    vllm_installed = importlib.util.find_spec("vllm") is not None
+    cuda_available = False
     try:
         import torch
-        return torch.cuda.is_available()
+        cuda_available = torch.cuda.is_available()
     except ImportError:
-        return False
+        pass
+    
+    # Log for debugging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"vLLM check: installed={vllm_installed}, cuda={cuda_available}")
+    
+    return vllm_installed and cuda_available
 
 
 def get_available_components() -> Dict[str, List[str]]:
-    """Get list of available components from registries."""
-    available_disambiguators = list(disambiguators.available().keys())
-    if not _is_vllm_usable():
-        available_disambiguators = [d for d in available_disambiguators if d != "lela_vllm"]
+    """Get list of available spaCy pipeline components."""
+    # These map to spaCy factories registered in ner_pipeline.spacy_components
+    # Always include lela_vllm - it will error at runtime if not usable
+    available_disambiguators = ["none", "first", "popularity", "lela_vllm"]
     
     return {
-        "loaders": list(loaders.available().keys()),
-        "ner": list(ner_models.available().keys()),
-        "candidates": list(candidate_generators.available().keys()),
-        "rerankers": ["none"] + list(rerankers.available().keys()),
-        "disambiguators": ["none"] + available_disambiguators,
-        "knowledge_bases": list(knowledge_bases.available().keys()),
+        "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
+        "ner": ["simple", "spacy", "gliner", "transformers", "lela_gliner"],
+        "candidates": ["fuzzy", "bm25", "lela_bm25", "lela_dense"],
+        "rerankers": ["none", "cross_encoder", "lela_embedder"],
+        "disambiguators": available_disambiguators,
+        "knowledge_bases": ["custom", "lela_jsonl"],
     }
 
 
@@ -96,11 +95,15 @@ def run_pipeline(
     spacy_model: str,
     gliner_model: str,
     gliner_labels: str,
+    gliner_threshold: float,
     simple_min_len: int,
     cand_type: str,
     cand_top_k: int,
+    cand_use_context: bool,
     reranker_type: str,
+    reranker_top_k: int,
     disambig_type: str,
+    kb_type: str,
     progress=gr.Progress(),
 ) -> Tuple[List[Tuple[str, Optional[str]]], Dict]:
     """Run the NER pipeline with selected configuration."""
@@ -113,32 +116,40 @@ def run_pipeline(
     
     progress(0.1, desc="Building pipeline configuration...")
     
+    # Build NER params based on type
     ner_params = {}
     if ner_type == "spacy":
         ner_params["model"] = spacy_model
-    elif ner_type == "gliner":
+    elif ner_type in ("gliner", "lela_gliner"):
         ner_params["model_name"] = gliner_model
+        ner_params["threshold"] = gliner_threshold
         if gliner_labels:
             ner_params["labels"] = [l.strip() for l in gliner_labels.split(",")]
     elif ner_type == "simple":
         ner_params["min_len"] = simple_min_len
     
-    cand_params = {}
-    if cand_top_k > 0:
-        cand_params["top_k"] = cand_top_k
+    # Build candidate params
+    cand_params = {"top_k": cand_top_k}
+    if cand_type in ("lela_bm25", "lela_dense"):
+        cand_params["use_context"] = cand_use_context
+    
+    # Build reranker params
+    reranker_params = {}
+    if reranker_type != "none":
+        reranker_params["top_k"] = reranker_top_k
     
     config_dict = {
         "loader": {"name": loader_type, "params": {}},
         "ner": {"name": ner_type, "params": ner_params},
         "candidate_generator": {"name": cand_type, "params": cand_params},
-        "reranker": {"name": reranker_type, "params": {}} if reranker_type != "none" else None,
+        "reranker": {"name": reranker_type, "params": reranker_params} if reranker_type != "none" else {"name": "none", "params": {}},
         "disambiguator": {"name": disambig_type, "params": {}} if disambig_type != "none" else None,
-        "knowledge_base": {"name": "custom", "params": {"path": kb_file.name}},
+        "knowledge_base": {"name": kb_type, "params": {"path": kb_file.name}},
         "cache_dir": ".ner_cache",
         "batch_size": 1,
     }
     
-    progress(0.3, desc="Initializing pipeline...")
+    progress(0.3, desc="Initializing spaCy pipeline...")
     
     try:
         config = PipelineConfig.from_dict(config_dict)
@@ -182,9 +193,15 @@ def update_ner_params(ner_choice: str):
     """Show/hide NER-specific parameters based on selection."""
     return {
         spacy_params: gr.update(visible=(ner_choice == "spacy")),
-        gliner_params: gr.update(visible=(ner_choice == "gliner")),
+        gliner_params: gr.update(visible=(ner_choice in ("gliner", "lela_gliner"))),
         simple_params: gr.update(visible=(ner_choice == "simple")),
     }
+
+
+def update_cand_params(cand_choice: str):
+    """Show/hide candidate-specific parameters based on selection."""
+    show_context = cand_choice in ("lela_bm25", "lela_dense")
+    return gr.update(visible=show_context)
 
 
 def update_loader_from_file(file: Optional[gr.File]):
@@ -221,6 +238,10 @@ if __name__ == "__main__":
     
     logging.basicConfig(level=args.log)
     logger = logging.getLogger(__name__)
+    
+    # Log vLLM availability status
+    vllm_ok = _is_vllm_usable()
+    logger.info(f"vLLM disambiguator available: {vllm_ok}")
     
     components = get_available_components()
     
@@ -264,6 +285,7 @@ if __name__ == "__main__":
                         choices=components["ner"],
                         value="simple",
                         label="NER Model",
+                        info="Maps to spaCy component factory",
                     )
                     
                     with gr.Group(visible=False) as spacy_params:
@@ -282,6 +304,13 @@ if __name__ == "__main__":
                             label="Entity Labels (comma-separated)",
                             value="person, organization, location",
                         )
+                        gliner_threshold = gr.Slider(
+                            minimum=0.1,
+                            maximum=1.0,
+                            value=0.5,
+                            step=0.05,
+                            label="Detection Threshold",
+                        )
                     
                     with gr.Group(visible=True) as simple_params:
                         simple_min_len = gr.Slider(
@@ -297,13 +326,20 @@ if __name__ == "__main__":
                         choices=components["candidates"],
                         value="fuzzy",
                         label="Candidate Generator",
+                        info="Maps to spaCy component factory",
                     )
                     cand_top_k = gr.Slider(
                         minimum=1,
-                        maximum=20,
+                        maximum=100,
                         value=10,
                         step=1,
                         label="Top K Candidates",
+                    )
+                    cand_use_context = gr.Checkbox(
+                        label="Use Context",
+                        value=True,
+                        visible=False,
+                        info="Include surrounding context in retrieval query",
                     )
                 
                 with gr.Accordion("Reranking", open=False):
@@ -311,6 +347,14 @@ if __name__ == "__main__":
                         choices=components["rerankers"],
                         value="none",
                         label="Reranker",
+                        info="Maps to spaCy component factory",
+                    )
+                    reranker_top_k = gr.Slider(
+                        minimum=1,
+                        maximum=20,
+                        value=10,
+                        step=1,
+                        label="Reranker Top K",
                     )
                 
                 with gr.Accordion("Disambiguation", open=True):
@@ -318,6 +362,15 @@ if __name__ == "__main__":
                         choices=components["disambiguators"],
                         value="first",
                         label="Disambiguator",
+                        info="Maps to spaCy component factory",
+                    )
+                
+                with gr.Accordion("Knowledge Base", open=False):
+                    kb_type = gr.Dropdown(
+                        choices=components["knowledge_bases"],
+                        value="custom",
+                        label="KB Format",
+                        info="custom: requires id field, lela_jsonl: uses title as id",
                     )
                 
                 run_btn = gr.Button("Run Pipeline", variant="primary", size="lg")
@@ -347,6 +400,12 @@ if __name__ == "__main__":
             outputs=[spacy_params, gliner_params, simple_params],
         )
         
+        cand_type.change(
+            fn=update_cand_params,
+            inputs=[cand_type],
+            outputs=[cand_use_context],
+        )
+        
         run_btn.click(
             fn=run_pipeline,
             inputs=[
@@ -358,11 +417,15 @@ if __name__ == "__main__":
                 spacy_model,
                 gliner_model,
                 gliner_labels,
+                gliner_threshold,
                 simple_min_len,
                 cand_type,
                 cand_top_k,
+                cand_use_context,
                 reranker_type,
+                reranker_top_k,
                 disambig_type,
+                kb_type,
             ],
             outputs=[highlighted_output, json_output],
         )
@@ -370,9 +433,9 @@ if __name__ == "__main__":
         gr.Markdown("""
 ## Quick Start
 
-1. **Upload Knowledge Base**: Provide a JSONL file with entities (required fields: `id`, `title`, `description`)
+1. **Upload Knowledge Base**: Provide a JSONL file with entities (required fields: `id`, `title`, `description` for custom; `title`, `description` for lela_jsonl)
 2. **Enter Text or Upload File**: Input text directly or upload a document
-3. **Configure Pipeline**: Select components and adjust parameters
+3. **Configure Pipeline**: Select spaCy components and adjust parameters
 4. **Run**: Click "Run Pipeline" to process
 
 ### Example Files
@@ -380,6 +443,16 @@ if __name__ == "__main__":
 Test files are available in `data/test/`:
 - `sample_kb.jsonl` - Sample knowledge base with 10 entities
 - `sample_doc.txt` - Sample document for testing
+
+### spaCy Component Mapping
+
+| Config Name | spaCy Factory |
+|-------------|---------------|
+| simple | ner_pipeline_simple |
+| lela_gliner | ner_pipeline_lela_gliner |
+| lela_bm25 | ner_pipeline_lela_bm25_candidates |
+| lela_embedder | ner_pipeline_lela_embedder_reranker |
+| lela_vllm | ner_pipeline_lela_vllm_disambiguator |
         """)
         
         with gr.Accordion("Entity Type Legend (SpaCy)", open=False):
@@ -409,4 +482,3 @@ Test files are available in `data/test/`:
     
     logger.info(f"Launching Gradio UI on port {args.port}...")
     demo.launch(server_name="0.0.0.0", server_port=args.port, share=args.share)
-

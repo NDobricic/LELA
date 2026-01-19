@@ -142,11 +142,20 @@ ner-pipeline/
 
 ### Installation
 
+**Requirements:** Python 3.10 (recommended), CUDA 11.8 for GPU support
+
 ```bash
-# Clone the repository
 cd ner-pipeline
 
-# Install dependencies
+# Create virtual environment with Python 3.10
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+
+# Install PyTorch with CUDA 11.8 (required for P100/older GPUs)
+pip install torch==2.6.0+cu118 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Install remaining dependencies
 pip install -r requirements.txt
 
 # For spaCy models (optional - only if using spaCy NER)
@@ -234,13 +243,18 @@ python app.py --port 7860
 
 ## Requirements
 
-- Python 3.9+
-- spaCy 3.0+
-- PyTorch 2.6.0+
+- Python 3.10 (recommended; 3.13 has compatibility issues with vLLM)
+- spaCy 3.8+
+- PyTorch 2.6.0+cu118
+- vLLM 0.8.5 (for LELA vLLM disambiguator)
 - See `requirements.txt` for full dependency list
+
+### GPU Support
+
+- **CUDA 11.8**: Required for PyTorch GPU acceleration
+- **P100/Pascal GPUs**: Use `torch==2.6.0+cu118` and `vllm==0.8.5` (newer versions drop support for compute capability 6.0)
+- **Newer GPUs (A100, etc.)**: Can use newer PyTorch/vLLM versions with CUDA 12.x
 
 ### Optional Dependencies
 
-- **GPU Support**: CUDA 11.8+ for GPU acceleration
-- **vLLM**: Required for LELA vLLM disambiguator
-- **spaCy Models**: Required for spaCy's built-in NER
+- **spaCy Models**: Required for spaCy's built-in NER (`python -m spacy download en_core_web_sm`)

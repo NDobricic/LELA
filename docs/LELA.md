@@ -585,12 +585,23 @@ python -m ner_pipeline.cli \
 | lela_embedder | Yes | Embedding computation |
 | lela_vllm | Yes (Required) | LLM inference |
 
+### CUDA Compatibility
+
+For **P100/Pascal GPUs** (compute capability 6.0):
+- Use `torch==2.6.0+cu118` (CUDA 11.8)
+- Use `vllm==0.8.5` (newer versions drop P100 support)
+- Install from PyTorch index: `pip install torch==2.6.0+cu118 --index-url https://download.pytorch.org/whl/cu118`
+
+For **newer GPUs** (A100, H100, etc.):
+- Can use latest PyTorch/vLLM with CUDA 12.x
+
 ### Model Sizes
 
 | Model | Size | VRAM Required |
 |-------|------|---------------|
 | NuNER_Zero-span | ~350MB | ~2GB |
 | Qwen3-Embedding-4B | ~8GB | ~10GB |
+| Qwen3-4B | ~8GB | ~10GB |
 | Qwen3-8B | ~16GB | ~20GB |
 
 ### Optimization Tips

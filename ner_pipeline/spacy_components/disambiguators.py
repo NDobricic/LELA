@@ -217,17 +217,11 @@ class LELAvLLMDisambiguatorComponent:
                 add_descriptions=self.add_descriptions,
             )
 
-            # Get chat template kwargs
-            chat_kwargs = {}
-            if self.disable_thinking:
-                chat_kwargs["enable_thinking"] = False
-
             try:
                 responses = self.llm.chat(
                     [messages],
                     sampling_params=self.sampling_params,
                     use_tqdm=False,
-                    chat_template_kwargs=chat_kwargs if chat_kwargs else {},
                 )
                 response = responses[0] if responses else None
             except Exception as e:

@@ -3,10 +3,19 @@
 Standalone, swappable NER → candidate generation → rerank → disambiguation pipeline. Uses file-based storage (JSONL for KB and outputs) and optional caching in `.ner_cache/`.
 
 ## Install
+
+**Requirements:** Python 3.10 (recommended), CUDA 11.8 for GPU support
+
 ```bash
-cd ner_pipeline
-python -m venv .venv
+cd ner-pipeline
+python3.10 -m venv .venv
 source .venv/bin/activate
+pip install --upgrade pip
+
+# Install PyTorch with CUDA 11.8 (required for P100/older GPUs)
+pip install torch==2.6.0+cu118 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Install remaining dependencies
 pip install -r requirements.txt
 ```
 

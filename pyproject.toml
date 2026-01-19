@@ -2,7 +2,7 @@
 name = "ner-pipeline"
 version = "0.1.0"
 description = "A modular NER and entity linking pipeline"
-requires-python = ">=3.9"
+requires-python = ">=3.10,<3.13"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

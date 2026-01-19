@@ -36,6 +36,10 @@ class ComponentRegistry:
         return dict(self._registry)
 
 
-# Registries for custom components (loaders and KBs only)
+# Registries for all pipeline components
 loaders = ComponentRegistry()
 knowledge_bases = ComponentRegistry()
+ner_models = ComponentRegistry()
+candidate_generators = ComponentRegistry()
+rerankers = ComponentRegistry()
+disambiguators = ComponentRegistry()
