@@ -10,10 +10,12 @@ Provides factories and components for entity disambiguation:
 import logging
 import re
 from collections import Counter
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from spacy.language import Language
 from spacy.tokens import Doc, Span
+
+ProgressCallback = Callable[[float, str], None]
 
 from ner_pipeline.knowledge_bases.base import KnowledgeBase
 from ner_pipeline.lela.config import (
@@ -74,7 +76,7 @@ def _ensure_extensions():
         "max_model_len": DEFAULT_MAX_MODEL_LEN,
         "add_none_candidate": False,
         "add_descriptions": True,
-        "disable_thinking": False,
+        "disable_thinking": True,  # Disable thinking by default for faster responses
         "system_prompt": None,
         "generation_config": None,
         "self_consistency_k": 1,
@@ -125,7 +127,7 @@ class LELAvLLMDisambiguatorComponent:
         max_model_len: Optional[int] = DEFAULT_MAX_MODEL_LEN,
         add_none_candidate: bool = False,
         add_descriptions: bool = True,
-        disable_thinking: bool = False,
+        disable_thinking: bool = True,  # Default True for faster responses
         system_prompt: Optional[str] = None,
         generation_config: Optional[dict] = None,
         self_consistency_k: int = 1,
@@ -157,6 +159,9 @@ class LELAvLLMDisambiguatorComponent:
 
         # Initialize lazily
         self.kb = None
+        
+        # Optional progress callback for fine-grained progress reporting
+        self.progress_callback: Optional[ProgressCallback] = None
 
         logger.info(f"LELA vLLM disambiguator initialized: {model_name}")
 
@@ -166,11 +171,30 @@ class LELAvLLMDisambiguatorComponent:
 
     @staticmethod
     def _parse_output(output: str) -> int:
-        """Parse LLM output to extract answer index."""
-        match = re.search(r'"?answer"?:\s*(\d+)', output)
+        """Parse LLM output to extract answer index.
+        
+        Handles multiple formats:
+        - "answer": 3  (standard format)
+        - answer: 3
+        - 3  (just a number, common with /no_think mode)
+        """
+        # Try standard format first: "answer": N or answer: N
+        match = re.search(r'"?answer"?\s*:\s*(\d+)', output, re.IGNORECASE)
         if match:
             return int(match.group(1))
-        logger.debug(f"Unexpected output format: {output}")
+        
+        # Try to find any standalone number (for /no_think mode which may output just "3")
+        # Look for a number that's either at the start/end or surrounded by whitespace/punctuation
+        match = re.search(r'(?:^|\s)(\d+)(?:\s|$|\.)', output.strip())
+        if match:
+            return int(match.group(1))
+        
+        # Last resort: find any digit
+        match = re.search(r'(\d+)', output)
+        if match:
+            return int(match.group(1))
+        
+        logger.debug(f"Could not parse answer from output: {output}")
         return 0
 
     def _apply_self_consistency(self, outputs: list) -> int:
@@ -191,20 +215,36 @@ class LELAvLLMDisambiguatorComponent:
             return doc
 
         text = doc.text
+        entities = list(doc.ents)
+        num_entities = len(entities)
 
-        for ent in doc.ents:
+        for i, ent in enumerate(entities):
+            ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+            base_progress = i / num_entities
+            entity_progress_range = 1.0 / num_entities
+            
+            def report_entity_progress(sub_progress: float, sub_desc: str):
+                if self.progress_callback and num_entities > 0:
+                    progress = base_progress + sub_progress * entity_progress_range
+                    self.progress_callback(progress, f"Entity {i+1}/{num_entities} ({ent_text}): {sub_desc}")
+            
+            report_entity_progress(0.0, "checking candidates")
+            
             candidates = getattr(ent._, "candidates", [])
             if not candidates:
                 continue
 
             # If only one candidate and no none option, select it directly
             if len(candidates) == 1 and not self.add_none_candidate:
+                report_entity_progress(0.5, "single candidate, selecting")
                 title = candidates[0][0]
                 entity = self.kb.get_entity(title)
                 if entity:
                     ent._.resolved_entity = entity
                 continue
 
+            report_entity_progress(0.1, f"preparing prompt ({len(candidates)} candidates)")
+            
             # Mark mention in text
             marked_text = self._mark_mention(text, ent.start_char, ent.end_char)
 
@@ -215,11 +255,23 @@ class LELAvLLMDisambiguatorComponent:
                 system_prompt=self.system_prompt,
                 add_none_candidate=self.add_none_candidate,
                 add_descriptions=self.add_descriptions,
+                disable_thinking=self.disable_thinking,
             )
 
+            report_entity_progress(0.2, "calling LLM...")
+
             try:
-                responses = self.llm.chat(
-                    [messages],
+                # Apply chat template manually for more control
+                tokenizer = self.llm.get_tokenizer()
+                prompt = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                logger.debug(f"Formatted prompt for '{ent.text}':\n{prompt[:500]}...")
+
+                responses = self.llm.generate(
+                    [prompt],
                     sampling_params=self.sampling_params,
                     use_tqdm=False,
                 )
@@ -231,18 +283,257 @@ class LELAvLLMDisambiguatorComponent:
             if response is None:
                 continue
 
+            report_entity_progress(0.9, "parsing LLM response")
+            
             try:
+                # Log the raw LLM output for debugging
+                raw_output = response.outputs[0].text if response.outputs else ""
+                logger.debug(f"LLM raw output for '{ent.text}': {raw_output}")
+                
                 answer = self._apply_self_consistency(response.outputs)
+                logger.debug(f"Parsed answer: {answer} (from {len(candidates)} candidates)")
 
-                # Answer 0 means "None" if add_none_candidate is True
+                # Answer 0 means "None" if add_none_candidate is True, or parsing failed
                 if answer == 0:
+                    logger.debug(f"Skipping entity '{ent.text}': answer was 0 (none or parse failure)")
                     continue
 
                 if 0 < answer <= len(candidates):
                     selected_title = candidates[answer - 1][0]
+                    logger.debug(f"Selected candidate: '{selected_title}'")
                     entity = self.kb.get_entity(selected_title)
                     if entity:
                         ent._.resolved_entity = entity
+                        logger.debug(f"Resolved '{ent.text}' to '{entity.title}'")
+                    else:
+                        logger.warning(f"Entity not found in KB: '{selected_title}'")
+                else:
+                    logger.debug(f"Answer {answer} out of range for {len(candidates)} candidates")
+
+            except Exception as e:
+                logger.error(f"Error processing LLM response: {e}")
+                continue
+        
+        # Clear progress callback after processing
+        self.progress_callback = None
+
+        return doc
+
+
+# ============================================================================
+# LELA Transformers Disambiguator Component (for older GPUs)
+# ============================================================================
+
+@Language.factory(
+    "ner_pipeline_lela_transformers_disambiguator",
+    default_config={
+        "model_name": DEFAULT_LLM_MODEL,
+        "add_none_candidate": False,
+        "add_descriptions": True,
+        "disable_thinking": True,
+        "system_prompt": None,
+        "generation_config": None,
+    },
+)
+def create_lela_transformers_disambiguator_component(
+    nlp: Language,
+    name: str,
+    model_name: str,
+    add_none_candidate: bool,
+    add_descriptions: bool,
+    disable_thinking: bool,
+    system_prompt: Optional[str],
+    generation_config: Optional[dict],
+):
+    """Factory for LELA transformers disambiguator component."""
+    return LELATransformersDisambiguatorComponent(
+        nlp=nlp,
+        model_name=model_name,
+        add_none_candidate=add_none_candidate,
+        add_descriptions=add_descriptions,
+        disable_thinking=disable_thinking,
+        system_prompt=system_prompt,
+        generation_config=generation_config,
+    )
+
+
+class LELATransformersDisambiguatorComponent:
+    """
+    Transformers-based entity disambiguator component for spaCy.
+
+    Alternative to vLLM for older GPUs (like P100) where vLLM has issues.
+    Uses HuggingFace transformers directly for inference.
+    """
+
+    def __init__(
+        self,
+        nlp: Language,
+        model_name: str = DEFAULT_LLM_MODEL,
+        add_none_candidate: bool = False,
+        add_descriptions: bool = True,
+        disable_thinking: bool = True,
+        system_prompt: Optional[str] = None,
+        generation_config: Optional[dict] = None,
+    ):
+        self.nlp = nlp
+        self.model_name = model_name
+        self.add_none_candidate = add_none_candidate
+        self.add_descriptions = add_descriptions
+        self.disable_thinking = disable_thinking
+        self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        self.generation_config = generation_config or DEFAULT_GENERATION_CONFIG
+
+        _ensure_extensions()
+
+        # Lazy load model and tokenizer
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        logger.info(f"Loading transformers model: {model_name}")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float16,
+            trust_remote_code=True,
+        ).to("cuda")
+        self.model.eval()
+
+        self.kb = None
+        self.progress_callback: Optional[ProgressCallback] = None
+
+        logger.info(f"LELA transformers disambiguator initialized: {model_name}")
+
+    def initialize(self, kb: KnowledgeBase):
+        """Initialize the component with a knowledge base."""
+        self.kb = kb
+
+    @staticmethod
+    def _parse_output(output: str) -> int:
+        """Parse LLM output to extract answer index.
+
+        Handles Qwen3 thinking mode by extracting content after </think> tag.
+        """
+        # Handle Qwen3 thinking mode - extract content after </think>
+        if "</think>" in output:
+            output = output.split("</think>")[-1].strip()
+
+        # Try standard format: "answer": N or answer: N
+        match = re.search(r'"?answer"?\s*:\s*(\d+)', output, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+
+        # Try standalone number
+        match = re.search(r'(?:^|\s)(\d+)(?:\s|$|\.)', output.strip())
+        if match:
+            return int(match.group(1))
+
+        # Last resort: find any digit
+        match = re.search(r'(\d+)', output)
+        if match:
+            return int(match.group(1))
+
+        logger.debug(f"Could not parse answer from output: {output}")
+        return 0
+
+    def _mark_mention(self, text: str, start: int, end: int) -> str:
+        """Mark mention in text with brackets."""
+        return f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
+
+    def __call__(self, doc: Doc) -> Doc:
+        """Disambiguate all entities in the document."""
+        import torch
+
+        if self.kb is None:
+            logger.warning("Transformers disambiguator not initialized - call initialize(kb) first")
+            return doc
+
+        text = doc.text
+        entities = list(doc.ents)
+        num_entities = len(entities)
+
+        for i, ent in enumerate(entities):
+            ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+            base_progress = i / num_entities
+            entity_progress_range = 1.0 / num_entities
+
+            def report_entity_progress(sub_progress: float, sub_desc: str):
+                if self.progress_callback and num_entities > 0:
+                    progress = base_progress + sub_progress * entity_progress_range
+                    self.progress_callback(progress, f"Entity {i+1}/{num_entities} ({ent_text}): {sub_desc}")
+
+            report_entity_progress(0.0, "checking candidates")
+
+            candidates = getattr(ent._, "candidates", [])
+            if not candidates:
+                continue
+
+            if len(candidates) == 1 and not self.add_none_candidate:
+                report_entity_progress(0.5, "single candidate, selecting")
+                title = candidates[0][0]
+                entity = self.kb.get_entity(title)
+                if entity:
+                    ent._.resolved_entity = entity
+                continue
+
+            report_entity_progress(0.1, f"preparing prompt ({len(candidates)} candidates)")
+
+            marked_text = self._mark_mention(text, ent.start_char, ent.end_char)
+            messages = create_disambiguation_messages(
+                marked_text=marked_text,
+                candidates=candidates,
+                system_prompt=self.system_prompt,
+                add_none_candidate=self.add_none_candidate,
+                add_descriptions=self.add_descriptions,
+                disable_thinking=self.disable_thinking,
+            )
+
+            report_entity_progress(0.2, "calling LLM...")
+
+            try:
+                prompt = self.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                logger.debug(f"Formatted prompt for '{ent.text}':\n{prompt[:500]}...")
+
+                inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=self.generation_config.get("max_tokens", 64),
+                        temperature=self.generation_config.get("temperature", 0.1),
+                        do_sample=True,
+                        pad_token_id=self.tokenizer.eos_token_id,
+                    )
+                # Extract only the generated part (remove the prompt)
+                generated_ids = outputs[0][inputs["input_ids"].shape[1]:]
+                raw_output = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
+                logger.debug(f"LLM raw output for '{ent.text}': {raw_output}")
+
+            except Exception as e:
+                logger.error(f"LLM generation error: {e}")
+                continue
+
+            report_entity_progress(0.9, "parsing LLM response")
+
+            try:
+                answer = self._parse_output(raw_output)
+                logger.debug(f"Parsed answer: {answer} (from {len(candidates)} candidates)")
+
+                if answer == 0:
+                    logger.debug(f"Skipping entity '{ent.text}': answer was 0 (none or parse failure)")
+                    continue
+
+                if 0 < answer <= len(candidates):
+                    selected_title = candidates[answer - 1][0]
+                    logger.debug(f"Selected candidate: '{selected_title}'")
+                    entity = self.kb.get_entity(selected_title)
+                    if entity:
+                        ent._.resolved_entity = entity
+                        logger.debug(f"Resolved '{ent.text}' to '{entity.title}'")
+                    else:
+                        logger.warning(f"Entity not found in KB: '{selected_title}'")
                 else:
                     logger.debug(f"Answer {answer} out of range for {len(candidates)} candidates")
 
@@ -250,6 +541,7 @@ class LELAvLLMDisambiguatorComponent:
                 logger.error(f"Error processing LLM response: {e}")
                 continue
 
+        self.progress_callback = None
         return doc
 
 
@@ -279,6 +571,9 @@ class FirstDisambiguatorComponent:
     def __init__(self, nlp: Language):
         self.nlp = nlp
         self.kb = None
+        
+        # Optional progress callback for fine-grained progress reporting
+        self.progress_callback: Optional[ProgressCallback] = None
 
         _ensure_extensions()
 
@@ -292,7 +587,16 @@ class FirstDisambiguatorComponent:
             logger.warning("First disambiguator not initialized - call initialize(kb) first")
             return doc
 
-        for ent in doc.ents:
+        entities = list(doc.ents)
+        num_entities = len(entities)
+
+        for i, ent in enumerate(entities):
+            # Report progress if callback is set
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(progress, f"Disambiguating entity {i+1}/{num_entities}: {ent_text}")
+            
             candidates = getattr(ent._, "candidates", [])
             if not candidates:
                 continue
@@ -303,6 +607,9 @@ class FirstDisambiguatorComponent:
             if entity:
                 ent._.resolved_entity = entity
 
+        # Clear progress callback after processing
+        self.progress_callback = None
+        
         return doc
 
 
@@ -334,6 +641,9 @@ class PopularityDisambiguatorComponent:
     def __init__(self, nlp: Language):
         self.nlp = nlp
         self.kb = None
+        
+        # Optional progress callback for fine-grained progress reporting
+        self.progress_callback: Optional[ProgressCallback] = None
 
         _ensure_extensions()
 
@@ -347,7 +657,16 @@ class PopularityDisambiguatorComponent:
             logger.warning("Popularity disambiguator not initialized - call initialize(kb) first")
             return doc
 
-        for ent in doc.ents:
+        entities = list(doc.ents)
+        num_entities = len(entities)
+
+        for i, ent in enumerate(entities):
+            # Report progress if callback is set
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(progress, f"Disambiguating entity {i+1}/{num_entities}: {ent_text}")
+            
             candidates = getattr(ent._, "candidates", [])
             if not candidates:
                 continue
@@ -359,4 +678,7 @@ class PopularityDisambiguatorComponent:
             if entity:
                 ent._.resolved_entity = entity
 
+        # Clear progress callback after processing
+        self.progress_callback = None
+        
         return doc

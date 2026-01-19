@@ -5,6 +5,7 @@ NER_LABELS = ["person", "organization", "location", "event", "work of art", "pro
 
 # Model IDs
 DEFAULT_GLINER_MODEL = "numind/NuNER_Zero-span"
+# Qwen3-4B for entity disambiguation (use lela_transformers on P100 GPUs)
 DEFAULT_LLM_MODEL = "Qwen/Qwen3-4B"
 DEFAULT_EMBEDDER_MODEL = "Qwen/Qwen3-Embedding-4B"
 DEFAULT_RERANKER_MODEL = "tomaarsen/Qwen3-Reranker-4B-seq-cls"
@@ -33,7 +34,11 @@ RERANKER_TASK = (
     "retrieve relevant entities that the mention refers to."
 )
 
-# Default generation config for vLLM
+# Default generation config for LLM disambiguation
+# Qwen3 needs more tokens due to thinking mode
 DEFAULT_GENERATION_CONFIG = {
-    "max_tokens": 32768,
+    "max_tokens": 512,  # More tokens for thinking mode + answer
+    "temperature": 0.1,  # Low temperature for deterministic outputs
+    "top_p": 0.9,
+    "repetition_penalty": 1.1,  # Prevent repetitive garbage output
 }

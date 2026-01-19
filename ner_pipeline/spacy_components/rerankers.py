@@ -8,11 +8,13 @@ Provides factories and components for candidate reranking:
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 from spacy.language import Language
 from spacy.tokens import Doc, Span
+
+ProgressCallback = Callable[[float, str], None]
 
 from ner_pipeline.lela.config import (
     RERANKER_TOP_K,
@@ -86,6 +88,9 @@ class LELAEmbedderRerankerComponent:
         self.port = port
 
         _ensure_candidates_extension()
+        
+        # Optional progress callback for fine-grained progress reporting
+        self.progress_callback: Optional[ProgressCallback] = None
 
         logger.info(f"LELA embedder reranker initialized: {model_name}")
 
@@ -112,8 +117,16 @@ class LELAEmbedderRerankerComponent:
     def __call__(self, doc: Doc) -> Doc:
         """Rerank candidates for all entities in the document."""
         text = doc.text
+        entities = list(doc.ents)
+        num_entities = len(entities)
 
-        for ent in doc.ents:
+        for i, ent in enumerate(entities):
+            # Report progress if callback is set
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(progress, f"Reranking {i+1}/{num_entities}: {ent_text}")
+            
             candidates = getattr(ent._, "candidates", [])
             if not candidates:
                 continue
@@ -154,6 +167,9 @@ class LELAEmbedderRerankerComponent:
                 f"Reranked {len(candidates)} to {len(ent._.candidates)} for '{ent.text}'"
             )
 
+        # Clear progress callback after processing
+        self.progress_callback = None
+        
         return doc
 
 
@@ -200,6 +216,9 @@ class CrossEncoderRerankerComponent:
         self.top_k = top_k
 
         _ensure_candidates_extension()
+        
+        # Optional progress callback for fine-grained progress reporting
+        self.progress_callback: Optional[ProgressCallback] = None
 
         # Lazy import
         try:
@@ -215,8 +234,16 @@ class CrossEncoderRerankerComponent:
     def __call__(self, doc: Doc) -> Doc:
         """Rerank candidates for all entities in the document."""
         text = doc.text
+        entities = list(doc.ents)
+        num_entities = len(entities)
 
-        for ent in doc.ents:
+        for i, ent in enumerate(entities):
+            # Report progress if callback is set
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(progress, f"Reranking {i+1}/{num_entities}: {ent_text}")
+            
             candidates = getattr(ent._, "candidates", [])
             if not candidates:
                 continue
@@ -242,6 +269,9 @@ class CrossEncoderRerankerComponent:
                 f"Cross-encoder reranked {len(candidates)} to {len(ent._.candidates)} for '{ent.text}'"
             )
 
+        # Clear progress callback after processing
+        self.progress_callback = None
+        
         return doc
 
 

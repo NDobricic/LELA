@@ -9,11 +9,13 @@ Provides factories and components for candidate generation:
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 from spacy.language import Language
 from spacy.tokens import Doc, Span
+
+ProgressCallback = Callable[[float, str], None]
 
 from ner_pipeline.knowledge_bases.base import KnowledgeBase
 from ner_pipeline.lela.config import (
@@ -139,6 +141,9 @@ class LELABM25CandidatesComponent:
         self.retriever = None
         self.stemmer = None
         self.tokenizer = None
+        
+        # Optional progress callback for fine-grained progress reporting
+        self.progress_callback: Optional[ProgressCallback] = None
 
     def initialize(self, kb: KnowledgeBase):
         """Initialize the component with a knowledge base."""
@@ -185,8 +190,16 @@ class LELABM25CandidatesComponent:
             return doc
 
         bm25s = _get_bm25s()
+        entities = list(doc.ents)
+        num_entities = len(entities)
 
-        for ent in doc.ents:
+        for i, ent in enumerate(entities):
+            # Report progress if callback is set
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
+            
             # Build query
             if self.use_context and hasattr(ent._, "context") and ent._.context:
                 query_text = f"{ent.text} {ent._.context}"
@@ -212,12 +225,15 @@ class LELABM25CandidatesComponent:
 
             # Store as LELA format: List[Tuple[str, str]] (title, description)
             candidates = []
-            for i, record in enumerate(candidates_docs):
+            for j, record in enumerate(candidates_docs):
                 candidates.append((record["title"], record["description"]))
 
             ent._.candidates = candidates
             logger.debug(f"Retrieved {len(candidates)} candidates for '{ent.text}'")
 
+        # Clear progress callback after processing
+        self.progress_callback = None
+        
         return doc
 
 
@@ -285,6 +301,9 @@ class LELADenseCandidatesComponent:
         self.kb = None
         self.entities = None
         self.index = None
+        
+        # Optional progress callback for fine-grained progress reporting
+        self.progress_callback: Optional[ProgressCallback] = None
 
     def initialize(self, kb: KnowledgeBase):
         """Initialize the component with a knowledge base."""
@@ -343,7 +362,16 @@ class LELADenseCandidatesComponent:
             logger.warning("Dense component not initialized - call initialize(kb) first")
             return doc
 
-        for ent in doc.ents:
+        entities = list(doc.ents)
+        num_entities = len(entities)
+
+        for i, ent in enumerate(entities):
+            # Report progress if callback is set
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
+            
             # Build query
             context = None
             if self.use_context and hasattr(ent._, "context"):
@@ -372,6 +400,9 @@ class LELADenseCandidatesComponent:
             ent._.candidates = candidates
             logger.debug(f"Dense-retrieved {len(candidates)} candidates for '{ent.text}'")
 
+        # Clear progress callback after processing
+        self.progress_callback = None
+        
         return doc
 
 
@@ -415,6 +446,9 @@ class FuzzyCandidatesComponent:
         self.kb = None
         self.entities = None
         self.titles = None
+        
+        # Optional progress callback for fine-grained progress reporting
+        self.progress_callback: Optional[ProgressCallback] = None
 
     def initialize(self, kb: KnowledgeBase):
         """Initialize the component with a knowledge base."""
@@ -435,7 +469,16 @@ class FuzzyCandidatesComponent:
 
         from rapidfuzz import process
 
-        for ent in doc.ents:
+        entities = list(doc.ents)
+        num_entities = len(entities)
+
+        for i, ent in enumerate(entities):
+            # Report progress if callback is set
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
+            
             results = process.extract(ent.text, self.titles, limit=self.top_k)
 
             # Build candidates as LELA format
@@ -447,6 +490,9 @@ class FuzzyCandidatesComponent:
             ent._.candidates = candidates
             logger.debug(f"Fuzzy-matched {len(candidates)} candidates for '{ent.text}'")
 
+        # Clear progress callback after processing
+        self.progress_callback = None
+        
         return doc
 
 
@@ -491,6 +537,9 @@ class BM25CandidatesComponent:
         self.entities = None
         self.bm25 = None
         self.corpus = None
+        
+        # Optional progress callback for fine-grained progress reporting
+        self.progress_callback: Optional[ProgressCallback] = None
 
     def initialize(self, kb: KnowledgeBase):
         """Initialize the component with a knowledge base."""
@@ -523,7 +572,16 @@ class BM25CandidatesComponent:
             logger.warning("BM25 component not initialized - call initialize(kb) first")
             return doc
 
-        for ent in doc.ents:
+        entities = list(doc.ents)
+        num_entities = len(entities)
+
+        for i, ent in enumerate(entities):
+            # Report progress if callback is set
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
+            
             query_tokens = ent.text.lower().split()
             scores = self.bm25.get_scores(query_tokens)
 
@@ -539,4 +597,7 @@ class BM25CandidatesComponent:
             ent._.candidates = candidates
             logger.debug(f"BM25 retrieved {len(candidates)} candidates for '{ent.text}'")
 
+        # Clear progress callback after processing
+        self.progress_callback = None
+        
         return doc

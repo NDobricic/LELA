@@ -6,6 +6,15 @@ DEFAULT_SYSTEM_PROMPT = """You are an expert designed to disambiguate entities i
 Your task is to determine the most appropriate entity from the candidates based on the context and candidate entity descriptions.
 Please show your choice in the answer field with only the choice index number, e.g., "answer": 3."""
 
+# System prompt for non-thinking mode - explicitly asks for just the number
+NO_THINKING_SYSTEM_PROMPT = """You are an entity disambiguation expert. Given a text with a mention marked in [brackets] and a list of numbered candidates, output ONLY the number of the best matching candidate.
+
+Rules:
+- Output ONLY a single number (e.g., "1" or "2" or "3")
+- Do NOT explain your reasoning
+- Do NOT output any other text
+- If no candidate matches, output "0"""""
+
 
 def create_disambiguation_messages(
     marked_text: str,
@@ -14,6 +23,7 @@ def create_disambiguation_messages(
     query_prompt: Optional[str] = None,
     add_none_candidate: bool = True,
     add_descriptions: bool = True,
+    disable_thinking: bool = False,
 ) -> List[dict]:
     """
     Create message list for LLM disambiguation.
@@ -25,16 +35,22 @@ def create_disambiguation_messages(
         query_prompt: Optional additional query context
         add_none_candidate: Whether to include "None" option
         add_descriptions: Whether to include entity descriptions
+        disable_thinking: Whether to use a simpler prompt that asks for just a number
 
     Returns:
         List of message dicts for chat API
     """
     messages = []
 
-    if system_prompt is None:
-        system_prompt = DEFAULT_SYSTEM_PROMPT
+    # Use appropriate system prompt
+    if system_prompt is not None:
+        final_system_prompt = system_prompt
+    elif disable_thinking:
+        final_system_prompt = NO_THINKING_SYSTEM_PROMPT
+    else:
+        final_system_prompt = DEFAULT_SYSTEM_PROMPT
 
-    messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "system", "content": final_system_prompt})
 
     if query_prompt:
         messages.append({"role": "user", "content": query_prompt})
@@ -52,6 +68,12 @@ def create_disambiguation_messages(
     candidate_str = none_option + "\n".join(candidate_lines)
 
     user_message = f"Input text: {marked_text}\nList of candidate entities:\n{candidate_str}"
+
+    # Add /no_think soft switch for Qwen3 models when thinking is disabled
+    # This is a soft switch that Qwen3 recognizes to skip chain-of-thought
+    if disable_thinking:
+        user_message += " /no_think"
+
     messages.append({"role": "user", "content": user_message})
 
     return messages

@@ -31,11 +31,11 @@
   "disambiguator": {
     "name": "lela_vllm",
     "params": {
-      "model_name": "Qwen/Qwen3-8B",
+      "model_name": "Qwen/Qwen3-4B",
       "tensor_parallel_size": 1,
       "add_none_candidate": true,
       "add_descriptions": true,
-      "disable_thinking": false
+      "disable_thinking": true
     }
   },
   "knowledge_base": {

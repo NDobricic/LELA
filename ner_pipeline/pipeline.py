@@ -10,11 +10,13 @@ import json
 import os
 import pickle
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional
+from typing import Callable, Dict, Iterable, Iterator, List, Optional
 
 import spacy
 from spacy.language import Language
 from spacy.tokens import Doc
+
+ProgressCallback = Callable[[float, str], None]
 
 # Import spacy_components to register factories
 from ner_pipeline import spacy_components  # noqa: F401
@@ -55,6 +57,7 @@ RERANKER_COMPONENT_MAP = {
 
 DISAMBIGUATOR_COMPONENT_MAP = {
     "lela_vllm": "ner_pipeline_lela_vllm_disambiguator",
+    "lela_transformers": "ner_pipeline_lela_transformers_disambiguator",
     "first": "ner_pipeline_first_disambiguator",
     "popularity": "ner_pipeline_popularity_disambiguator",
 }
@@ -69,38 +72,59 @@ class NERPipeline:
     knowledge bases as custom registry components.
     """
 
-    def __init__(self, config: PipelineConfig) -> None:
+    def __init__(
+        self,
+        config: PipelineConfig,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> None:
         self.config = config
         self.cache_dir = Path(config.cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
+        def report(progress: float, desc: str):
+            if progress_callback:
+                progress_callback(progress, desc)
+
         # Initialize knowledge base (kept as custom registry)
+        report(0.0, "Loading knowledge base...")
         self.kb = None
         if config.knowledge_base:
             kb_factory = knowledge_bases.get(config.knowledge_base.name)
             self.kb = kb_factory(**config.knowledge_base.params)
 
         # Initialize loader (kept as custom registry)
+        report(0.15, "Initializing document loader...")
         loader_factory = loaders.get(config.loader.name)
         self.loader = loader_factory(**config.loader.params)
 
         # Build spaCy pipeline
-        self.nlp = self._build_nlp_pipeline(config)
+        report(0.2, "Building spaCy pipeline...")
+        self.nlp = self._build_nlp_pipeline(config, progress_callback)
 
-    def _build_nlp_pipeline(self, config: PipelineConfig) -> Language:
+    def _build_nlp_pipeline(
+        self,
+        config: PipelineConfig,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> Language:
         """
         Build spaCy pipeline from configuration.
 
         Args:
             config: Pipeline configuration
+            progress_callback: Optional callback for progress reporting
 
         Returns:
             Configured spaCy Language instance
         """
+        def report(progress: float, desc: str):
+            if progress_callback:
+                progress_callback(progress, desc)
+
         # Start with blank English model
         nlp = spacy.blank("en")
 
         # Add NER component
+        report(0.25, f"Loading NER model ({config.ner.name})...")
         ner_name = config.ner.name
         ner_params = dict(config.ner.params)
 
@@ -120,6 +144,7 @@ class NERPipeline:
             nlp.add_pipe(factory_name, config=ner_params)
 
         # Add candidate generation component
+        report(0.45, f"Loading candidate generator ({config.candidate_generator.name})...")
         cand_name = config.candidate_generator.name
         cand_params = dict(config.candidate_generator.params)
         factory_name = CANDIDATES_COMPONENT_MAP.get(cand_name)
@@ -133,6 +158,7 @@ class NERPipeline:
 
         # Add reranker component (optional)
         if config.reranker and config.reranker.name != "none":
+            report(0.6, f"Loading reranker ({config.reranker.name})...")
             rerank_name = config.reranker.name
             rerank_params = dict(config.reranker.params)
             factory_name = RERANKER_COMPONENT_MAP.get(rerank_name)
@@ -142,6 +168,7 @@ class NERPipeline:
 
         # Add disambiguator component (optional)
         if config.disambiguator:
+            report(0.75, f"Loading disambiguator ({config.disambiguator.name})...")
             disamb_name = config.disambiguator.name
             disamb_params = dict(config.disambiguator.params)
             factory_name = DISAMBIGUATOR_COMPONENT_MAP.get(disamb_name)
@@ -153,6 +180,7 @@ class NERPipeline:
             if hasattr(disamb_component, "initialize") and self.kb is not None:
                 disamb_component.initialize(self.kb)
 
+        report(1.0, "Pipeline initialization complete")
         return nlp
 
     def _cache_key(self, path: str) -> str:
@@ -247,6 +275,126 @@ class NERPipeline:
 
         # Serialize to output format
         return self._serialize_doc(spacy_doc, doc)
+
+    def process_document_with_progress(
+        self,
+        doc: Document,
+        progress_callback: Optional[ProgressCallback] = None,
+        base_progress: float = 0.0,
+        progress_range: float = 1.0,
+    ) -> Dict:
+        """
+        Process a single document with progress callbacks for each stage.
+
+        Args:
+            doc: Document to process
+            progress_callback: Optional callback(progress: float, description: str)
+            base_progress: Starting progress value (0.0-1.0)
+            progress_range: How much progress this processing represents (0.0-1.0)
+
+        Returns:
+            Dict with extracted entities and metadata
+        """
+        def report(local_progress: float, desc: str):
+            if progress_callback:
+                actual_progress = base_progress + local_progress * progress_range
+                progress_callback(actual_progress, desc)
+
+        # Create spaCy doc from text
+        report(0.0, "Tokenizing document...")
+        spacy_doc = self.nlp.make_doc(doc.text)
+
+        # Get pipeline components
+        components = list(self.nlp.pipeline)
+        if not components:
+            return self._serialize_doc(spacy_doc, doc)
+
+        # Calculate progress per stage
+        # Reserve some progress for entity-level processing
+        num_components = len(components)
+        component_progress = 0.9 / num_components  # 90% for components, 10% for serialization
+
+        current_progress = 0.0
+
+        for i, (name, component) in enumerate(components):
+            stage_name = self._get_stage_description(name)
+            report(current_progress, f"{stage_name}...")
+
+            # Set up component-level progress callback if the component supports it
+            if hasattr(component, 'progress_callback') and self._is_entity_processing_component(name):
+                def make_component_callback(base_prog: float, comp_prog: float, stage: str):
+                    def callback(local_progress: float, desc: str):
+                        actual_progress = base_prog + local_progress * comp_prog
+                        report(actual_progress, f"{stage}: {desc}")
+                    return callback
+                
+                component.progress_callback = make_component_callback(
+                    current_progress, component_progress, stage_name
+                )
+            
+            # Run the component
+            spacy_doc = component(spacy_doc)
+
+            current_progress += component_progress
+
+            # Report entity count after NER component
+            if self._is_ner_component(name) and hasattr(spacy_doc, 'ents'):
+                num_ents = len(spacy_doc.ents)
+                report(current_progress, f"{stage_name} complete: found {num_ents} entities")
+
+        report(0.95, "Serializing results...")
+        result = self._serialize_doc(spacy_doc, doc)
+
+        report(1.0, "Document processing complete")
+        return result
+
+    def _get_stage_description(self, component_name: str) -> str:
+        """Get human-readable description for a component name."""
+        descriptions = {
+            "ner_pipeline_lela_gliner": "NER (GLiNER)",
+            "ner_pipeline_simple": "NER (regex)",
+            "ner_pipeline_gliner": "NER (GLiNER)",
+            "ner_pipeline_transformers": "NER (Transformers)",
+            "ner_pipeline_ner_filter": "NER context extraction",
+            "ner": "NER (spaCy)",
+            "ner_pipeline_lela_bm25_candidates": "Candidate generation (BM25)",
+            "ner_pipeline_lela_dense_candidates": "Candidate generation (dense)",
+            "ner_pipeline_fuzzy_candidates": "Candidate generation (fuzzy)",
+            "ner_pipeline_bm25_candidates": "Candidate generation (BM25)",
+            "ner_pipeline_lela_embedder_reranker": "Reranking (embedder)",
+            "ner_pipeline_cross_encoder_reranker": "Reranking (cross-encoder)",
+            "ner_pipeline_noop_reranker": "Reranking (pass-through)",
+            "ner_pipeline_lela_vllm_disambiguator": "Disambiguation (LLM)",
+            "ner_pipeline_first_disambiguator": "Disambiguation",
+            "ner_pipeline_popularity_disambiguator": "Disambiguation",
+        }
+        return descriptions.get(component_name, component_name)
+
+    def _is_ner_component(self, component_name: str) -> bool:
+        """Check if component is a NER component."""
+        return component_name in (
+            "ner_pipeline_lela_gliner",
+            "ner_pipeline_simple",
+            "ner_pipeline_gliner",
+            "ner_pipeline_transformers",
+            "ner",
+            "ner_pipeline_ner_filter",
+        )
+
+    def _is_entity_processing_component(self, component_name: str) -> bool:
+        """Check if component processes entities (candidates, reranking, disambiguation)."""
+        return component_name in (
+            "ner_pipeline_lela_bm25_candidates",
+            "ner_pipeline_lela_dense_candidates",
+            "ner_pipeline_fuzzy_candidates",
+            "ner_pipeline_bm25_candidates",
+            "ner_pipeline_lela_embedder_reranker",
+            "ner_pipeline_cross_encoder_reranker",
+            "ner_pipeline_lela_vllm_disambiguator",
+            "ner_pipeline_lela_transformers_disambiguator",
+            "ner_pipeline_first_disambiguator",
+            "ner_pipeline_popularity_disambiguator",
+        )
 
     def run(self, paths: Iterable[str], output_path: Optional[str] = None) -> List[Dict]:
         """

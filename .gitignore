@@ -32,4 +32,5 @@ data/*
 # Logs / artifacts
 *.log
 
-
+# AI Tools
+.claude/

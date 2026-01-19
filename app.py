@@ -44,7 +44,7 @@ def get_available_components() -> Dict[str, List[str]]:
     """Get list of available spaCy pipeline components."""
     # These map to spaCy factories registered in ner_pipeline.spacy_components
     # Always include lela_vllm - it will error at runtime if not usable
-    available_disambiguators = ["none", "first", "popularity", "lela_vllm"]
+    available_disambiguators = ["none", "first", "popularity", "lela_vllm", "lela_transformers"]
     
     return {
         "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
@@ -149,16 +149,22 @@ def run_pipeline(
         "batch_size": 1,
     }
     
-    progress(0.3, desc="Initializing spaCy pipeline...")
-    
+    progress(0.15, desc="Initializing pipeline...")
+
     try:
         config = PipelineConfig.from_dict(config_dict)
-        pipeline = NERPipeline(config)
+
+        # Progress callback for initialization (maps 0-1 to 0.15-0.35)
+        def init_progress_callback(local_progress: float, description: str):
+            actual_progress = 0.15 + local_progress * 0.2
+            progress(actual_progress, desc=description)
+
+        pipeline = NERPipeline(config, progress_callback=init_progress_callback)
     except Exception as e:
         raise gr.Error(f"Failed to initialize pipeline: {str(e)}")
     
-    progress(0.5, desc="Running pipeline...")
-    
+    progress(0.4, desc="Loading document...")
+
     try:
         if file_input:
             input_path = file_input.name
@@ -166,17 +172,33 @@ def run_pipeline(
             with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
                 f.write(text_input)
                 input_path = f.name
-        
-        results = pipeline.run([input_path])
-        
+
+        # Load document using the pipeline's loader
+        docs = list(pipeline.loader.load(input_path))
+
         if not file_input:
             os.unlink(input_path)
-        
-        if not results:
-            raise gr.Error("No results returned from pipeline.")
-        
-        result = results[0]
-        
+
+        if not docs:
+            raise gr.Error("No documents loaded from input.")
+
+        doc = docs[0]
+
+        # Process with fine-grained progress callback
+        def progress_callback(local_progress: float, description: str):
+            # Map local progress (0.0-1.0) to our range (0.45-0.85)
+            actual_progress = 0.45 + local_progress * 0.4
+            progress(actual_progress, desc=description)
+
+        result = pipeline.process_document_with_progress(
+            doc,
+            progress_callback=progress_callback,
+            base_progress=0.0,
+            progress_range=1.0,
+        )
+
+    except gr.Error:
+        raise
     except Exception as e:
         raise gr.Error(f"Pipeline execution failed: {str(e)}")
     
