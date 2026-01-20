@@ -10,8 +10,9 @@ import json
 import os
 import pickle
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Iterator, List, Optional
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Tuple
 
+import numpy as np
 import spacy
 from spacy.language import Language
 from spacy.tokens import Doc
@@ -287,7 +288,12 @@ class NERPipeline:
         spacy_doc = self.nlp(doc.text)
 
         # Serialize to output format
-        return self._serialize_doc(spacy_doc, doc)
+        result = self._serialize_doc(spacy_doc, doc)
+
+        # Normalize linking confidence across entities in this document
+        self._normalize_linking_confidence([result])
+
+        return result
 
     def process_document_with_progress(
         self,
@@ -358,6 +364,9 @@ class NERPipeline:
         report(0.95, "Serializing results...")
         result = self._serialize_doc(spacy_doc, doc)
 
+        # Normalize linking confidence across entities in this document
+        self._normalize_linking_confidence([result])
+
         report(1.0, "Document processing complete")
         return result
 
@@ -409,6 +418,70 @@ class NERPipeline:
             "ner_pipeline_popularity_disambiguator",
         )
 
+    def _normalize_linking_confidence(self, results: List[Dict]) -> None:
+        """
+        Normalize linking_confidence values across all entities in the batch.
+
+        Uses robust min-max normalization (IQR-based) to handle outliers.
+        Adds a 'linking_confidence_normalized' field to each entity dict.
+
+        Args:
+            results: List of document result dicts (modified in place)
+        """
+        # Collect all non-None linking_confidence values
+        scores: List[float] = []
+        for doc_result in results:
+            for entity in doc_result.get("entities", []):
+                conf = entity.get("linking_confidence")
+                if conf is not None:
+                    scores.append(float(conf))
+
+        if not scores:
+            # No scores to normalize, set all to None
+            for doc_result in results:
+                for entity in doc_result.get("entities", []):
+                    entity["linking_confidence_normalized"] = None
+            return
+
+        scores_arr = np.array(scores)
+
+        # Handle edge case: all scores identical
+        if np.all(scores_arr == scores_arr[0]):
+            # All same value -> normalize to 1.0 (or 0.5 if you prefer)
+            for doc_result in results:
+                for entity in doc_result.get("entities", []):
+                    if entity.get("linking_confidence") is not None:
+                        entity["linking_confidence_normalized"] = 1.0
+                    else:
+                        entity["linking_confidence_normalized"] = None
+            return
+
+        # Compute IQR-based bounds for robust normalization
+        q1, q3 = np.percentile(scores_arr, [25, 75])
+        iqr = q3 - q1
+
+        if iqr == 0:
+            # Very little spread, fall back to simple min-max
+            lower = scores_arr.min()
+            upper = scores_arr.max()
+        else:
+            lower = q1 - 1.5 * iqr
+            upper = q3 + 1.5 * iqr
+            # Ensure bounds cover at least the actual data range
+            lower = min(lower, scores_arr.min())
+            upper = max(upper, scores_arr.max())
+
+        # Apply normalization to each entity
+        for doc_result in results:
+            for entity in doc_result.get("entities", []):
+                conf = entity.get("linking_confidence")
+                if conf is not None:
+                    clipped = np.clip(float(conf), lower, upper)
+                    normalized = (clipped - lower) / (upper - lower)
+                    entity["linking_confidence_normalized"] = float(normalized)
+                else:
+                    entity["linking_confidence_normalized"] = None
+
     def run(self, paths: Iterable[str], output_path: Optional[str] = None) -> List[Dict]:
         """
         Process multiple files through the pipeline.
@@ -421,19 +494,19 @@ class NERPipeline:
             List of result dicts
         """
         results: List[Dict] = []
-        writer = None
-        if output_path:
-            writer = Path(output_path).open("w", encoding="utf-8")
 
-        try:
-            for path in paths:
-                for doc in self._load_with_cache(path):
-                    result = self.process_document(doc)
-                    if writer:
-                        writer.write(json.dumps(result) + "\n")
-                    results.append(result)
-        finally:
-            if writer:
-                writer.close()
+        for path in paths:
+            for doc in self._load_with_cache(path):
+                result = self.process_document(doc)
+                results.append(result)
+
+        # Normalize linking confidence across the entire batch
+        self._normalize_linking_confidence(results)
+
+        # Write to output file after normalization
+        if output_path:
+            with Path(output_path).open("w", encoding="utf-8") as writer:
+                for result in results:
+                    writer.write(json.dumps(result) + "\n")
 
         return results

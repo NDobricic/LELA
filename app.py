@@ -58,6 +58,32 @@ def get_available_components() -> Dict[str, List[str]]:
     }
 
 
+def filter_entities_by_confidence(result: Dict, threshold: float) -> Dict:
+    """Filter entities by normalized linking confidence threshold.
+
+    Args:
+        result: Full pipeline result dict
+        threshold: Minimum normalized confidence (0-1) to include entity
+
+    Returns:
+        New result dict with filtered entities
+    """
+    if not result:
+        return result
+
+    filtered_entities = []
+    for entity in result.get("entities", []):
+        conf = entity.get("linking_confidence_normalized")
+        # Include entity if: no confidence score (keep unlinked), or confidence >= threshold
+        if conf is None or conf >= threshold:
+            filtered_entities.append(entity)
+
+    return {
+        **result,
+        "entities": filtered_entities,
+    }
+
+
 def format_highlighted_text(result: Dict) -> List[Tuple[str, Optional[str]]]:
     """Convert pipeline result to HighlightedText format.
 
@@ -65,28 +91,111 @@ def format_highlighted_text(result: Dict) -> List[Tuple[str, Optional[str]]]:
     - Linked: "LABEL: Entity Title" (e.g., "PERSON: Albert Einstein")
     - Unlinked: "LABEL [NOT IN KB]" (e.g., "PERSON [NOT IN KB]")
     """
+    highlighted, _ = format_highlighted_text_with_threshold(result, threshold=0.0)
+    return highlighted
+
+
+GRAY_COLOR = "#D1D5DB"  # Tailwind gray-300 (light gray)
+
+# Color palette for consistent entity colors
+ENTITY_COLORS = [
+    "#AE14E3",
+    "#E0F51A",
+    "#E67899",
+    "#6B14E3",
+    "#E314C7",
+    "#E63874",
+    "#0118C7",
+    "#21BD7E",
+    "#566753",
+    "#196208",
+    "#9E8424",
+    "#F59061",
+    "#F0B833",
+    "#CC331C",
+    "#476AE0",
+    "#8D9EE6",
+    "#84A96F",
+    "#94500D",
+    "#53F06E",
+    "#36BAEB",
+]
+
+
+def get_label_color(label: str) -> str:
+    """Get consistent color for a label based on its hash."""
+    idx = hash(label) % len(ENTITY_COLORS)
+    return ENTITY_COLORS[idx]
+
+
+def format_highlighted_text_with_threshold(
+    result: Dict,
+    threshold: float = 0.0,
+) -> Tuple[List[Tuple[str, Optional[str]]], Dict[str, str]]:
+    """Convert pipeline result to HighlightedText format with confidence-based coloring.
+
+    Entities below the threshold are shown in gray.
+    Returns (highlighted_data, color_map) for use with gr.HighlightedText.
+    """
     text = result["text"]
     entities = result["entities"]
 
     if not entities:
-        return [(text, None)]
+        return [(text, None)], {}
 
-    sorted_entities = sorted(entities, key=lambda e: e["start"])
+    # Process entities: build labels and track max confidence per label
+    entity_data = []  # (entity, label, conf)
+    label_max_conf = {}  # Track max confidence for each unique label
 
+    for entity in entities:
+        conf = entity.get("linking_confidence_normalized")
+
+        label_type = entity.get("label", "ENT")
+        if entity.get("entity_title"):
+            label = f"{label_type}: {entity['entity_title']}"
+        else:
+            label = f"{label_type} [NOT IN KB]"
+
+        entity_data.append((entity, label, conf))
+
+        # Track max confidence for this label (None means unlinked, treat as above threshold)
+        if label not in label_max_conf:
+            label_max_conf[label] = conf
+        elif conf is not None:
+            if label_max_conf[label] is None or conf > label_max_conf[label]:
+                label_max_conf[label] = conf
+
+    # Determine which labels are above/below threshold based on their max confidence
+    above_threshold_labels = []
+    below_threshold_labels = []
+
+    for label, max_conf in label_max_conf.items():
+        # Label is "low confidence" only if it has a confidence value AND it's below threshold
+        is_low = max_conf is not None and max_conf < threshold
+        if is_low:
+            below_threshold_labels.append(label)
+        else:
+            above_threshold_labels.append(label)
+
+    # Build color_map: above-threshold labels FIRST (for legend ordering), then below
+    color_map = {}
+
+    for label in above_threshold_labels:
+        color_map[label] = get_label_color(label)
+
+    for label in below_threshold_labels:
+        color_map[label] = GRAY_COLOR
+
+    # Sort by position for text reconstruction
+    entity_data.sort(key=lambda x: x[0]["start"])
+
+    # Build highlighted text
     highlighted = []
     last_end = 0
 
-    for entity in sorted_entities:
+    for entity, label, _ in entity_data:
         if entity["start"] > last_end:
             highlighted.append((text[last_end:entity["start"]], None))
-
-        label = entity.get("label", "ENT")
-        if entity.get("entity_title"):
-            # Entity was linked to KB
-            label = f"{label}: {entity['entity_title']}"
-        else:
-            # Entity NOT linked - mark as unlinked
-            label = f"{label} [NOT IN KB]"
 
         highlighted.append((entity["text"], label))
         last_end = entity["end"]
@@ -94,11 +203,11 @@ def format_highlighted_text(result: Dict) -> List[Tuple[str, Optional[str]]]:
     if last_end < len(text):
         highlighted.append((text[last_end:], None))
 
-    return highlighted
+    return highlighted, color_map
 
 
-def compute_linking_stats(result: Dict) -> str:
-    """Compute statistics about entity linking results."""
+def compute_linking_stats(result: Dict, threshold: float = 0.0) -> str:
+    """Compute statistics about entity linking results with threshold breakdown."""
     entities = result.get("entities", [])
     if not entities:
         return "No entities found."
@@ -111,12 +220,27 @@ def compute_linking_stats(result: Dict) -> str:
     confidences = [e.get("linking_confidence") for e in entities if e.get("linking_confidence") is not None]
     avg_confidence = sum(confidences) / len(confidences) if confidences else 0
 
+    # Count entities above/below threshold
+    above_threshold = 0
+    below_threshold = 0
+    for e in entities:
+        conf = e.get("linking_confidence_normalized")
+        if conf is not None and conf < threshold:
+            below_threshold += 1
+        else:
+            above_threshold += 1
+
     stats = f"**Entity Linking Statistics**\n\n"
     stats += f"- Total entities: {total}\n"
     stats += f"- Linked to KB: {linked} ({100*linked/total:.1f}%)\n"
     stats += f"- Not in KB: {unlinked} ({100*unlinked/total:.1f}%)\n"
     if confidences:
         stats += f"- Avg. confidence (linked): {avg_confidence:.3f}\n"
+
+    if threshold > 0:
+        stats += f"\n**Confidence Filter** (threshold: {threshold:.2f})\n\n"
+        stats += f"- Above threshold: {above_threshold}\n"
+        stats += f"- Below threshold (gray): {below_threshold}\n"
 
     return stats
 
@@ -272,7 +396,7 @@ def update_loader_from_file(file: Optional[gr.File]):
     """Auto-detect loader type from file extension."""
     if not file:
         return gr.update()
-    
+
     ext = Path(file.name).suffix.lower()
     loader_map = {
         ".txt": "text",
@@ -281,10 +405,46 @@ def update_loader_from_file(file: Optional[gr.File]):
         ".html": "html",
         ".htm": "html",
     }
-    
+
     if ext in loader_map:
         return gr.update(value=loader_map[ext])
     return gr.update()
+
+
+def apply_confidence_filter(
+    full_result: Optional[Dict],
+    threshold: float,
+):
+    """Apply confidence threshold filter and regenerate outputs.
+
+    Args:
+        full_result: The complete unfiltered pipeline result (from State)
+        threshold: Confidence threshold from slider
+
+    Returns:
+        Tuple of (gr.HighlightedText, stats, full_json)
+    """
+    if not full_result:
+        return gr.HighlightedText(value=[]), "*Run the pipeline to see results.*", {}
+
+    highlighted, color_map = format_highlighted_text_with_threshold(full_result, threshold)
+    stats = compute_linking_stats(full_result, threshold)
+
+    return gr.HighlightedText(value=highlighted, color_map=color_map), stats, full_result
+
+
+def apply_confidence_filter_display(
+    full_result: Optional[Dict],
+    threshold: float,
+):
+    """Apply confidence filter to display components only (skip JSON for performance)."""
+    if not full_result:
+        return gr.HighlightedText(value=[]), "*Run the pipeline to see results.*"
+
+    highlighted, color_map = format_highlighted_text_with_threshold(full_result, threshold)
+    stats = compute_linking_stats(full_result, threshold)
+
+    return gr.HighlightedText(value=highlighted, color_map=color_map), stats
 
 
 if __name__ == "__main__":
@@ -311,6 +471,9 @@ if __name__ == "__main__":
     
     with gr.Blocks(title="NER Pipeline", fill_height=True) as demo:
         gr.Markdown(DESCRIPTION)
+
+        # State for storing full pipeline result (before confidence filtering)
+        full_result_state = gr.State(value=None)
         
         with gr.Row():
             with gr.Column(scale=1):
@@ -443,6 +606,15 @@ if __name__ == "__main__":
             with gr.Column(scale=1):
                 gr.Markdown("### Output")
 
+                confidence_threshold = gr.Slider(
+                    minimum=0.0,
+                    maximum=1.0,
+                    value=0.0,
+                    step=0.01,
+                    label="Confidence Threshold",
+                    info="Filter display by linking confidence (JSON always shows full results)",
+                )
+
                 highlighted_output = gr.HighlightedText(
                     label="Linked Entities",
                     color_map={},
@@ -477,9 +649,9 @@ if __name__ == "__main__":
         )
         
         run_btn.click(
-            fn=lambda: ([], "*Processing...*", None),
+            fn=lambda: ([], "*Processing...*", None, None),
             inputs=None,
-            outputs=[highlighted_output, stats_output, json_output],
+            outputs=[highlighted_output, stats_output, json_output, full_result_state],
         ).then(
             fn=run_pipeline,
             inputs=[
@@ -501,8 +673,18 @@ if __name__ == "__main__":
                 disambig_type,
                 kb_type,
             ],
-            outputs=[highlighted_output, stats_output, json_output],
+            outputs=[highlighted_output, stats_output, full_result_state],
             show_progress_on=highlighted_output,
+        ).then(
+            fn=apply_confidence_filter,
+            inputs=[full_result_state, confidence_threshold],
+            outputs=[highlighted_output, stats_output, json_output],
+        )
+
+        confidence_threshold.change(
+            fn=apply_confidence_filter_display,
+            inputs=[full_result_state, confidence_threshold],
+            outputs=[highlighted_output, stats_output],
         )
         
         gr.Markdown("""
