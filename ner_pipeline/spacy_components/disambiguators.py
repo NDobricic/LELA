@@ -10,7 +10,7 @@ Provides factories and components for entity disambiguation:
 import logging
 import re
 from collections import Counter
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional
 
 from spacy.language import Language
 from spacy.tokens import Doc, Span
@@ -30,7 +30,7 @@ from ner_pipeline.lela.prompts import (
 )
 from ner_pipeline.lela.llm_pool import get_vllm_instance
 from ner_pipeline.utils import ensure_candidates_extension, ensure_resolved_entity_extension
-from ner_pipeline.types import ProgressCallback
+from ner_pipeline.types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -235,14 +235,13 @@ class LELAvLLMDisambiguatorComponent:
             # If only one candidate and no none option, select it directly
             if len(candidates) == 1 and not self.add_none_candidate:
                 report_entity_progress(0.5, "single candidate, selecting")
-                title = candidates[0][0]
-                entity = self.kb.get_entity(title)
+                entity = self.kb.get_entity(candidates[0].entity_id)
                 if entity:
                     ent._.resolved_entity = entity
                 continue
 
             report_entity_progress(0.1, f"preparing prompt ({len(candidates)} candidates)")
-            
+
             # Mark mention in text
             marked_text = self._mark_mention(text, ent.start_char, ent.end_char)
 
@@ -250,6 +249,7 @@ class LELAvLLMDisambiguatorComponent:
             messages = create_disambiguation_messages(
                 marked_text=marked_text,
                 candidates=candidates,
+                kb=self.kb,
                 system_prompt=self.system_prompt,
                 add_none_candidate=self.add_none_candidate,
                 add_descriptions=self.add_descriptions,
@@ -297,14 +297,14 @@ class LELAvLLMDisambiguatorComponent:
                     continue
 
                 if 0 < answer <= len(candidates):
-                    selected_title = candidates[answer - 1][0]
-                    logger.debug(f"Selected candidate: '{selected_title}'")
-                    entity = self.kb.get_entity(selected_title)
+                    selected = candidates[answer - 1]
+                    logger.debug(f"Selected candidate: '{selected.entity_id}'")
+                    entity = self.kb.get_entity(selected.entity_id)
                     if entity:
                         ent._.resolved_entity = entity
-                        logger.debug(f"Resolved '{ent.text}' to '{entity.title}'")
+                        logger.debug(f"Resolved '{ent.text}' to '{entity.title}' (id: {entity.id})")
                     else:
-                        logger.warning(f"Entity not found in KB: '{selected_title}'")
+                        logger.warning(f"Entity not found in KB: '{selected.entity_id}'")
                 else:
                     logger.debug(f"Answer {answer} out of range for {len(candidates)} candidates")
 
@@ -467,8 +467,7 @@ class LELATransformersDisambiguatorComponent:
 
             if len(candidates) == 1 and not self.add_none_candidate:
                 report_entity_progress(0.5, "single candidate, selecting")
-                title = candidates[0][0]
-                entity = self.kb.get_entity(title)
+                entity = self.kb.get_entity(candidates[0].entity_id)
                 if entity:
                     ent._.resolved_entity = entity
                 continue
@@ -479,6 +478,7 @@ class LELATransformersDisambiguatorComponent:
             messages = create_disambiguation_messages(
                 marked_text=marked_text,
                 candidates=candidates,
+                kb=self.kb,
                 system_prompt=self.system_prompt,
                 add_none_candidate=self.add_none_candidate,
                 add_descriptions=self.add_descriptions,
@@ -524,14 +524,14 @@ class LELATransformersDisambiguatorComponent:
                     continue
 
                 if 0 < answer <= len(candidates):
-                    selected_title = candidates[answer - 1][0]
-                    logger.debug(f"Selected candidate: '{selected_title}'")
-                    entity = self.kb.get_entity(selected_title)
+                    selected = candidates[answer - 1]
+                    logger.debug(f"Selected candidate: '{selected.entity_id}'")
+                    entity = self.kb.get_entity(selected.entity_id)
                     if entity:
                         ent._.resolved_entity = entity
-                        logger.debug(f"Resolved '{ent.text}' to '{entity.title}'")
+                        logger.debug(f"Resolved '{ent.text}' to '{entity.title}' (id: {entity.id})")
                     else:
-                        logger.warning(f"Entity not found in KB: '{selected_title}'")
+                        logger.warning(f"Entity not found in KB: '{selected.entity_id}'")
                 else:
                     logger.debug(f"Answer {answer} out of range for {len(candidates)} candidates")
 
@@ -599,15 +599,14 @@ class FirstDisambiguatorComponent:
             if not candidates:
                 continue
 
-            # Select first candidate
-            title = candidates[0][0]
-            entity = self.kb.get_entity(title)
+            # Select first candidate by entity_id
+            entity = self.kb.get_entity(candidates[0].entity_id)
             if entity:
                 ent._.resolved_entity = entity
 
         # Clear progress callback after processing
         self.progress_callback = None
-        
+
         return doc
 
 
@@ -669,14 +668,12 @@ class PopularityDisambiguatorComponent:
             if not candidates:
                 continue
 
-            # In LELA format, candidates are already sorted by score
-            # So first candidate has highest score
-            title = candidates[0][0]
-            entity = self.kb.get_entity(title)
+            # Candidates are already sorted by score, first has highest
+            entity = self.kb.get_entity(candidates[0].entity_id)
             if entity:
                 ent._.resolved_entity = entity
 
         # Clear progress callback after processing
         self.progress_callback = None
-        
+
         return doc

@@ -29,7 +29,7 @@ from .registry import (
     knowledge_bases,
     loaders,
 )
-from .types import Document, ProgressCallback, tuples_to_candidates
+from .types import Candidate, Document, ProgressCallback
 
 
 # Component name mapping from config names to spaCy factory names
@@ -217,12 +217,10 @@ class NERPipeline:
         entities = []
 
         for ent in spacy_doc.ents:
-            # Get candidates (LELA format: List[Tuple[str, str]])
-            candidates_tuples = getattr(ent._, "candidates", [])
+            # Get candidates (List[Candidate])
+            candidates = getattr(ent._, "candidates", [])
             # Get candidate scores if available
             candidate_scores = getattr(ent._, "candidate_scores", [])
-            # Convert to Candidate objects for output
-            candidates = tuples_to_candidates(candidates_tuples)
 
             # Get resolved entity
             resolved_entity = getattr(ent._, "resolved_entity", None)
@@ -231,13 +229,13 @@ class NERPipeline:
             context = getattr(ent._, "context", None)
 
             # Compute linking confidence:
-            # - If entity resolved: use the top candidate's score (if available)
+            # - If entity resolved: use the score for the resolved candidate
             # - If not resolved: None (indicates NIL / no match found in KB)
             linking_confidence = None
-            if resolved_entity and candidate_scores:
-                # Find the score for the resolved entity
-                for i, (title, _) in enumerate(candidates_tuples):
-                    if title == resolved_entity.title and i < len(candidate_scores):
+            if resolved_entity and candidates:
+                # Find the score for the resolved entity by matching entity_id
+                for i, c in enumerate(candidates):
+                    if c.entity_id == resolved_entity.id and i < len(candidate_scores):
                         linking_confidence = candidate_scores[i]
                         break
                 # Fallback: use top score if we can't find exact match
@@ -259,10 +257,10 @@ class NERPipeline:
                 "candidates": [
                     {
                         "entity_id": c.entity_id,
-                        "score": candidate_scores[i] if i < len(candidate_scores) else None,
+                        "score": c.score,
                         "description": c.description,
                     }
-                    for i, c in enumerate(candidates)
+                    for c in candidates
                 ],
             }
             entities.append(entity_dict)

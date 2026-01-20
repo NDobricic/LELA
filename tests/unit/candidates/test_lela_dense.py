@@ -11,7 +11,7 @@ import spacy
 from spacy.tokens import Span
 
 from ner_pipeline.types import Candidate, Document, Mention
-from ner_pipeline.knowledge_bases.lela_jsonl import LELAJSONLKnowledgeBase
+from ner_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
 
 
 class TestLELADenseCandidatesComponent:
@@ -35,8 +35,8 @@ class TestLELADenseCandidatesComponent:
         os.unlink(path)
 
     @pytest.fixture
-    def kb(self, temp_kb_file: str) -> LELAJSONLKnowledgeBase:
-        return LELAJSONLKnowledgeBase(path=temp_kb_file)
+    def kb(self, temp_kb_file: str) -> CustomJSONLKnowledgeBase:
+        return CustomJSONLKnowledgeBase(path=temp_kb_file)
 
     @pytest.fixture
     def sample_doc(self) -> Document:
@@ -122,7 +122,7 @@ class TestLELADenseCandidatesComponent:
 
         candidates = doc.ents[0]._.candidates
         assert len(candidates) == 2
-        assert all(isinstance(c, tuple) and len(c) == 2 for c in candidates)
+        assert all(isinstance(c, Candidate) for c in candidates)
 
     @patch("ner_pipeline.spacy_components.candidates._get_faiss")
     @patch("ner_pipeline.spacy_components.candidates.embedder_pool")
@@ -151,8 +151,8 @@ class TestLELADenseCandidatesComponent:
 
         candidates = doc.ents[0]._.candidates
         # First entity is "Barack Obama"
-        assert candidates[0][0] == "Barack Obama"
-        assert candidates[0][1] == "44th US President"
+        assert candidates[0].entity_id == "Barack Obama"
+        assert candidates[0].description == "44th US President"
 
     @patch("ner_pipeline.spacy_components.candidates._get_faiss")
     @patch("ner_pipeline.spacy_components.candidates.embedder_pool")

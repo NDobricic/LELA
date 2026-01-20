@@ -7,6 +7,7 @@ from ner_pipeline.lela.prompts import (
     create_disambiguation_messages,
     mark_mention_in_text,
 )
+from ner_pipeline.types import Candidate
 
 
 class TestDefaultSystemPrompt:
@@ -62,9 +63,9 @@ class TestCreateDisambiguationMessages:
     @pytest.fixture
     def sample_candidates(self):
         return [
-            ("Barack Obama", "44th US President"),
-            ("Michelle Obama", "Former First Lady"),
-            ("Obama Foundation", "Non-profit organization"),
+            Candidate(entity_id="Barack Obama", description="44th US President"),
+            Candidate(entity_id="Michelle Obama", description="Former First Lady"),
+            Candidate(entity_id="Obama Foundation", description="Non-profit organization"),
         ]
 
     def test_returns_list_of_dicts(self, sample_candidates):
@@ -187,7 +188,10 @@ class TestCreateDisambiguationMessages:
         assert len(messages) >= 2
 
     def test_candidate_with_empty_description(self):
-        candidates = [("Entity A", ""), ("Entity B", "Has description")]
+        candidates = [
+            Candidate(entity_id="Entity A", description=""),
+            Candidate(entity_id="Entity B", description="Has description"),
+        ]
         messages = create_disambiguation_messages(
             marked_text="[Test] mention.",
             candidates=candidates,

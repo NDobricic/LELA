@@ -27,7 +27,7 @@
     "params": {}
   },
   "knowledge_base": {
-    "name": "lela_jsonl",
+    "name": "custom",
     "params": {
       "path": "entities.jsonl"
     }

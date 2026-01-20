@@ -1,6 +1,10 @@
 """Prompt templates for LELA disambiguation."""
 
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    from ner_pipeline.knowledge_bases.base import KnowledgeBase
+    from ner_pipeline.types import Candidate
 
 DEFAULT_SYSTEM_PROMPT = """You are an expert designed to disambiguate entities in text, taking into account the overall context and a list of entity candidates. You are provided with an input text that includes a full contextual narrative, a marked mention enclosed in square brackets, and a list of candidates, each preceded by an index number.
 Your task is to determine the most appropriate entity from the candidates based on the context and candidate entity descriptions.
@@ -13,12 +17,13 @@ Rules:
 - Output ONLY a single number (e.g., "1" or "2" or "3")
 - Do NOT explain your reasoning
 - Do NOT output any other text
-- If no candidate matches, output "0"""""
+- If no candidate matches, output "0\""""
 
 
 def create_disambiguation_messages(
     marked_text: str,
-    candidates: List[Tuple[str, str]],
+    candidates: List["Candidate"],
+    kb: Optional["KnowledgeBase"] = None,
     system_prompt: Optional[str] = None,
     query_prompt: Optional[str] = None,
     add_none_candidate: bool = True,
@@ -30,7 +35,8 @@ def create_disambiguation_messages(
 
     Args:
         marked_text: Text with mention marked using [brackets]
-        candidates: List of (entity_id, description) tuples
+        candidates: List of Candidate objects
+        kb: Optional knowledge base for looking up entity titles
         system_prompt: Optional custom system prompt
         query_prompt: Optional additional query context
         add_none_candidate: Whether to include "None" option
@@ -59,11 +65,18 @@ def create_disambiguation_messages(
     none_option = "0. None of the listed candidates\n" if add_none_candidate else ""
 
     candidate_lines = []
-    for i, (entity_id, description) in enumerate(candidates):
-        if add_descriptions and description:
-            candidate_lines.append(f"{i + 1}. {entity_id} - {description}")
+    for i, candidate in enumerate(candidates):
+        # Get entity title from KB if available, otherwise use entity_id
+        if kb:
+            entity = kb.get_entity(candidate.entity_id)
+            title = entity.title if entity else candidate.entity_id
         else:
-            candidate_lines.append(f"{i + 1}. {entity_id}")
+            title = candidate.entity_id
+
+        if add_descriptions and candidate.description:
+            candidate_lines.append(f"{i + 1}. {title} - {candidate.description}")
+        else:
+            candidate_lines.append(f"{i + 1}. {title}")
 
     candidate_str = none_option + "\n".join(candidate_lines)
 

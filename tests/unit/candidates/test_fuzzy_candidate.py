@@ -6,7 +6,7 @@ from spacy.tokens import Span
 
 from ner_pipeline import spacy_components  # Register factories
 from ner_pipeline.spacy_components.candidates import FuzzyCandidatesComponent
-from ner_pipeline.types import Entity
+from ner_pipeline.types import Candidate, Entity
 
 from tests.conftest import MockKnowledgeBase
 
@@ -42,13 +42,13 @@ class TestFuzzyCandidatesComponent:
         obama_ents = [ent for ent in doc.ents if "Obama" in ent.text]
         assert len(obama_ents) > 0
         ent = obama_ents[0]
-        # Candidates are stored as List[Tuple[str, str]]
+        # Candidates are stored as List[Candidate]
         assert hasattr(ent._, "candidates")
         assert len(ent._.candidates) > 0
-        # Check format (title, description)
-        for title, desc in ent._.candidates:
-            assert isinstance(title, str)
-            assert isinstance(desc, str)
+        # Check format is Candidate objects
+        for candidate in ent._.candidates:
+            assert isinstance(candidate, Candidate)
+            assert isinstance(candidate.entity_id, str)
 
     def test_exact_match_ranks_highest(self, nlp):
         text = "Barack Obama was here."
@@ -56,9 +56,9 @@ class TestFuzzyCandidatesComponent:
         obama_ents = [ent for ent in doc.ents if "Obama" in ent.text]
         assert len(obama_ents) > 0
         candidates = obama_ents[0]._.candidates
-        # Exact match should be in results
-        titles = [c[0] for c in candidates]
-        assert "Barack Obama" in titles
+        # Exact match should be in results (entity_id is the entity ID like Q76)
+        entity_ids = [c.entity_id for c in candidates]
+        assert "Q76" in entity_ids
 
     def test_fuzzy_match(self, nlp):
         text = "Barak Obama was here."
@@ -66,8 +66,8 @@ class TestFuzzyCandidatesComponent:
         obama_ents = [ent for ent in doc.ents if "Barak" in ent.text or "Obama" in ent.text]
         if obama_ents:
             candidates = obama_ents[0]._.candidates
-            titles = [c[0] for c in candidates]
-            assert "Barack Obama" in titles
+            entity_ids = [c.entity_id for c in candidates]
+            assert "Q76" in entity_ids
 
     def test_respects_top_k(self, kb: MockKnowledgeBase):
         nlp = spacy.blank("en")
@@ -86,9 +86,9 @@ class TestFuzzyCandidatesComponent:
         london_ents = [ent for ent in doc.ents if ent.text == "London"]
         if london_ents:
             candidates = london_ents[0]._.candidates
-            london_candidates = [c for c in candidates if c[0] == "London"]
+            london_candidates = [c for c in candidates if c.entity_id == "Q84"]
             assert len(london_candidates) > 0
-            assert london_candidates[0][1] == "Capital of UK"
+            assert london_candidates[0].description == "Capital of UK"
 
     def test_no_match_returns_some_candidates(self, nlp):
         text = "Xyzabc was here."
@@ -103,5 +103,5 @@ class TestFuzzyCandidatesComponent:
         london_ents = [ent for ent in doc.ents if "LONDON" in ent.text]
         if london_ents:
             candidates = london_ents[0]._.candidates
-            titles = [c[0] for c in candidates]
-            assert "London" in titles
+            entity_ids = [c.entity_id for c in candidates]
+            assert "Q84" in entity_ids

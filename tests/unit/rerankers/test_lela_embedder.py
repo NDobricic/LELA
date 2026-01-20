@@ -14,13 +14,13 @@ class TestLELAEmbedderRerankerComponent:
     """Tests for LELAEmbedderRerankerComponent class."""
 
     @pytest.fixture
-    def sample_candidates(self) -> list[tuple[str, str]]:
+    def sample_candidates(self) -> list[Candidate]:
         return [
-            ("E1", "Description 1"),
-            ("E2", "Description 2"),
-            ("E3", "Description 3"),
-            ("E4", "Description 4"),
-            ("E5", "Description 5"),
+            Candidate(entity_id="E1", description="Description 1"),
+            Candidate(entity_id="E2", description="Description 2"),
+            Candidate(entity_id="E3", description="Description 3"),
+            Candidate(entity_id="E4", description="Description 4"),
+            Candidate(entity_id="E5", description="Description 5"),
         ]
 
     @pytest.fixture
@@ -51,7 +51,7 @@ class TestLELAEmbedderRerankerComponent:
 
         result = doc.ents[0]._.candidates
         assert len(result) == 3
-        assert all(isinstance(c, tuple) and len(c) == 2 for c in result)
+        assert all(isinstance(c, Candidate) for c in result)
 
     @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
     def test_rerank_respects_top_k(
@@ -74,7 +74,7 @@ class TestLELAEmbedderRerankerComponent:
     def test_rerank_returns_all_if_fewer_than_top_k(
         self, mock_pool, nlp
     ):
-        candidates = [("E1", "Desc 1")]
+        candidates = [Candidate(entity_id="E1", description="Desc 1")]
 
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=5)
@@ -128,7 +128,7 @@ class TestLELAEmbedderRerankerComponent:
 
         result = doc.ents[0]._.candidates
         # E3 should be first (highest similarity)
-        assert result[0][0] == "E3"
+        assert result[0].entity_id == "E3"
 
     @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
     def test_query_includes_marked_mention(
@@ -158,9 +158,9 @@ class TestLELAEmbedderRerankerComponent:
         self, mock_pool, nlp
     ):
         candidates = [
-            ("Entity A", "Description A"),
-            ("Entity B", "Description B"),
-            ("Entity C", None),  # No description
+            Candidate(entity_id="Entity A", description="Description A"),
+            Candidate(entity_id="Entity B", description="Description B"),
+            Candidate(entity_id="Entity C", description=None),  # No description
         ]
 
         embed_calls = []
@@ -201,9 +201,9 @@ class TestLELAEmbedderRerankerComponent:
 
         result = doc.ents[0]._.candidates
         # Descriptions should be preserved
-        for title, desc in result:
-            original = next(o for o in sample_candidates if o[0] == title)
-            assert desc == original[1]
+        for candidate in result:
+            original = next(o for o in sample_candidates if o.entity_id == candidate.entity_id)
+            assert candidate.description == original.description
 
     def test_initialization_with_custom_params(self):
         nlp = spacy.blank("en")

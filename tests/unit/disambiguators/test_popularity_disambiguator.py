@@ -6,7 +6,7 @@ from spacy.tokens import Span
 
 from ner_pipeline import spacy_components  # Register factories
 from ner_pipeline.spacy_components.disambiguators import PopularityDisambiguatorComponent
-from ner_pipeline.types import Entity
+from ner_pipeline.types import Candidate, Entity
 
 from tests.conftest import MockKnowledgeBase
 
@@ -62,9 +62,9 @@ class TestPopularityDisambiguatorComponent:
             doc.ents = [span]
             # Candidates are sorted by score (highest first)
             span._.candidates = [
-                ("Entity Two", "Second entity"),  # Highest score
-                ("Entity One", "First entity"),
-                ("Entity Three", "Third entity"),
+                Candidate(entity_id="Q2", description="Second entity"),  # Highest score
+                Candidate(entity_id="Q1", description="First entity"),
+                Candidate(entity_id="Q3", description="Third entity"),
             ]
 
         disambiguator = nlp.get_pipe("ner_pipeline_popularity_disambiguator")
@@ -109,7 +109,7 @@ class TestPopularityDisambiguatorComponent:
         span = doc.char_span(0, 12, label="ENT")
         if span:
             doc.ents = [span]
-            span._.candidates = [("Entity Three", "Third entity")]
+            span._.candidates = [Candidate(entity_id="Q3", description="Third entity")]
 
         disambiguator = nlp.get_pipe("ner_pipeline_popularity_disambiguator")
         doc = disambiguator(doc)
@@ -117,8 +117,8 @@ class TestPopularityDisambiguatorComponent:
         if doc.ents:
             ent = doc.ents[0]
             assert ent._.resolved_entity is not None
+            assert ent._.resolved_entity.id == "Q3"
             assert ent._.resolved_entity.title == "Entity Three"
-            assert ent._.resolved_entity.description == "Third entity"
 
     def test_unknown_entity_returns_none(self, nlp, kb):
         doc = nlp.make_doc("Unknown.")
@@ -133,7 +133,7 @@ class TestPopularityDisambiguatorComponent:
         span = doc.char_span(0, 7, label="ENT")
         if span:
             doc.ents = [span]
-            span._.candidates = [("Unknown", "Not in KB")]
+            span._.candidates = [Candidate(entity_id="unknown", description="Not in KB")]
 
         disambiguator = nlp.get_pipe("ner_pipeline_popularity_disambiguator")
         doc = disambiguator(doc)
@@ -154,7 +154,7 @@ class TestPopularityDisambiguatorComponent:
         span = doc.char_span(0, 10, label="ENT")
         if span:
             doc.ents = [span]
-            span._.candidates = [("Entity One", "First entity")]
+            span._.candidates = [Candidate(entity_id="Q1", description="First entity")]
 
         disambiguator = nlp.get_pipe("ner_pipeline_popularity_disambiguator")
         doc = disambiguator(doc)

@@ -10,7 +10,7 @@ import spacy
 from spacy.tokens import Span
 
 from ner_pipeline.types import Candidate, Document, Entity, Mention
-from ner_pipeline.knowledge_bases.lela_jsonl import LELAJSONLKnowledgeBase
+from ner_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
 
 
 class TestLELABM25CandidatesComponent:
@@ -36,8 +36,8 @@ class TestLELABM25CandidatesComponent:
         os.unlink(path)
 
     @pytest.fixture
-    def kb(self, temp_kb_file: str) -> LELAJSONLKnowledgeBase:
-        return LELAJSONLKnowledgeBase(path=temp_kb_file)
+    def kb(self, temp_kb_file: str) -> CustomJSONLKnowledgeBase:
+        return CustomJSONLKnowledgeBase(path=temp_kb_file)
 
     @pytest.fixture
     def sample_doc(self) -> Document:
@@ -78,11 +78,11 @@ class TestLELABM25CandidatesComponent:
         mock_retriever = MagicMock()
         mock_bm25s.return_value.BM25.return_value = mock_retriever
 
-        # Setup retrieve response
+        # Setup retrieve response - include id field for proper entity tracking
         mock_results = MagicMock()
         mock_results.documents = [[
-            {"title": "Barack Obama", "description": "44th US President"},
-            {"title": "Michelle Obama", "description": "Former First Lady"},
+            {"id": "Barack Obama", "title": "Barack Obama", "description": "44th US President"},
+            {"id": "Michelle Obama", "title": "Michelle Obama", "description": "Former First Lady"},
         ]]
         mock_results.scores = [[0.9, 0.7]]
         mock_retriever.retrieve.return_value = mock_results
@@ -99,7 +99,7 @@ class TestLELABM25CandidatesComponent:
 
         candidates = doc.ents[0]._.candidates
         assert len(candidates) == 2
-        assert all(isinstance(c, tuple) and len(c) == 2 for c in candidates)
+        assert all(isinstance(c, Candidate) for c in candidates)
 
     @patch("ner_pipeline.spacy_components.candidates._get_stemmer")
     @patch("ner_pipeline.spacy_components.candidates._get_bm25s")
@@ -118,7 +118,7 @@ class TestLELABM25CandidatesComponent:
 
         mock_results = MagicMock()
         mock_results.documents = [[
-            {"title": "Barack Obama", "description": "44th US President"},
+            {"id": "Barack Obama", "title": "Barack Obama", "description": "44th US President"},
         ]]
         mock_results.scores = [[0.9]]
         mock_retriever.retrieve.return_value = mock_results
@@ -133,7 +133,7 @@ class TestLELABM25CandidatesComponent:
         doc = component(doc)
 
         candidates = doc.ents[0]._.candidates
-        assert candidates[0][0] == "Barack Obama"
+        assert candidates[0].entity_id == "Barack Obama"
 
     @patch("ner_pipeline.spacy_components.candidates._get_stemmer")
     @patch("ner_pipeline.spacy_components.candidates._get_bm25s")
@@ -152,7 +152,7 @@ class TestLELABM25CandidatesComponent:
 
         mock_results = MagicMock()
         mock_results.documents = [[
-            {"title": "Barack Obama", "description": "44th US President"},
+            {"id": "Barack Obama", "title": "Barack Obama", "description": "44th US President"},
         ]]
         mock_results.scores = [[0.9]]
         mock_retriever.retrieve.return_value = mock_results
@@ -167,7 +167,7 @@ class TestLELABM25CandidatesComponent:
         doc = component(doc)
 
         candidates = doc.ents[0]._.candidates
-        assert candidates[0][1] == "44th US President"
+        assert candidates[0].description == "44th US President"
 
     @patch("ner_pipeline.spacy_components.candidates._get_stemmer")
     @patch("ner_pipeline.spacy_components.candidates._get_bm25s")

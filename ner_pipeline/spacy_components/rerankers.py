@@ -8,7 +8,7 @@ Provides factories and components for candidate reranking:
 """
 
 import logging
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 from spacy.language import Language
@@ -23,7 +23,7 @@ from ner_pipeline.lela.config import (
 )
 from ner_pipeline.lela.llm_pool import embedder_pool
 from ner_pipeline.utils import ensure_candidates_extension
-from ner_pipeline.types import ProgressCallback
+from ner_pipeline.types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -102,10 +102,13 @@ class LELAEmbedderRerankerComponent:
         marked_text = f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
         return f"Instruct: {RERANKER_TASK}\nQuery: {marked_text}"
 
-    def _format_candidate(self, title: str, description: str) -> str:
+    def _format_candidate(self, candidate: Candidate, kb) -> str:
         """Format candidate for embedding."""
-        if description:
-            return f"{title}: {description}"
+        # Get entity title from KB for display
+        entity = kb.get_entity(candidate.entity_id) if kb else None
+        title = entity.title if entity else candidate.entity_id
+        if candidate.description:
+            return f"{title}: {candidate.description}"
         return title
 
     def __call__(self, doc: Doc) -> Doc:
@@ -120,7 +123,7 @@ class LELAEmbedderRerankerComponent:
                 progress = i / num_entities
                 ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
                 self.progress_callback(progress, f"Reranking {i+1}/{num_entities}: {ent_text}")
-            
+
             candidates = getattr(ent._, "candidates", [])
             if not candidates:
                 continue
@@ -131,8 +134,9 @@ class LELAEmbedderRerankerComponent:
             # Format query and candidates
             query_text = self._format_query(text, ent.start_char, ent.end_char)
             candidate_texts = [
-                self._format_candidate(title, desc)
-                for title, desc in candidates
+                self._format_candidate(c, self.kb) if hasattr(self, 'kb') else
+                f"{c.entity_id}: {c.description}" if c.description else c.entity_id
+                for c in candidates
             ]
 
             # Embed all texts
@@ -154,9 +158,19 @@ class LELAEmbedderRerankerComponent:
             scored_candidates.sort(key=lambda x: x[1], reverse=True)
             top_candidates = scored_candidates[:self.top_k]
 
-            # Update candidates and scores (keep as LELA format)
-            ent._.candidates = [c for c, _ in top_candidates]
-            ent._.candidate_scores = [float(s) for _, s in top_candidates]
+            # Update candidates with new scores
+            reranked = []
+            reranked_scores = []
+            for candidate, score in top_candidates:
+                reranked.append(Candidate(
+                    entity_id=candidate.entity_id,
+                    score=float(score),
+                    description=candidate.description,
+                ))
+                reranked_scores.append(float(score))
+
+            ent._.candidates = reranked
+            ent._.candidate_scores = reranked_scores
 
             logger.debug(
                 f"Reranked {len(candidates)} to {len(ent._.candidates)} for '{ent.text}'"
@@ -238,15 +252,15 @@ class CrossEncoderRerankerComponent:
                 progress = i / num_entities
                 ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
                 self.progress_callback(progress, f"Reranking {i+1}/{num_entities}: {ent_text}")
-            
+
             candidates = getattr(ent._, "candidates", [])
             if not candidates:
                 continue
 
             # Build pairs for cross-encoder
             pairs = [
-                (f"{ent.text} | {text}", desc if desc else title)
-                for title, desc in candidates
+                (f"{ent.text} | {text}", c.description if c.description else c.entity_id)
+                for c in candidates
             ]
 
             # Score pairs
@@ -257,9 +271,19 @@ class CrossEncoderRerankerComponent:
             scored_candidates.sort(key=lambda x: x[1], reverse=True)
             top_candidates = scored_candidates[:self.top_k]
 
-            # Update candidates and scores
-            ent._.candidates = [c for c, _ in top_candidates]
-            ent._.candidate_scores = [float(s) for _, s in top_candidates]
+            # Update candidates with new scores
+            reranked = []
+            reranked_scores = []
+            for candidate, score in top_candidates:
+                reranked.append(Candidate(
+                    entity_id=candidate.entity_id,
+                    score=float(score),
+                    description=candidate.description,
+                ))
+                reranked_scores.append(float(score))
+
+            ent._.candidates = reranked
+            ent._.candidate_scores = reranked_scores
 
             logger.debug(
                 f"Cross-encoder reranked {len(candidates)} to {len(ent._.candidates)} for '{ent.text}'"

@@ -101,7 +101,7 @@ The pipeline uses spaCy's custom extension system on `Span` objects:
 | Extension | Type | Description |
 |-----------|------|-------------|
 | `ent._.context` | `str` | Surrounding context for the entity mention |
-| `ent._.candidates` | `List[Tuple[str, str]]` | Candidate entities as (title, description) tuples |
+| `ent._.candidates` | `List[Candidate]` | Candidate entities (each with `entity_id`, `score`, `description`) |
 | `ent._.resolved_entity` | `Entity` | The final resolved entity object |
 
 ## Project Structure

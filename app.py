@@ -54,7 +54,7 @@ def get_available_components() -> Dict[str, List[str]]:
         "candidates": ["fuzzy", "bm25", "lela_bm25", "lela_dense"],
         "rerankers": ["none", "cross_encoder", "lela_embedder"],
         "disambiguators": available_disambiguators,
-        "knowledge_bases": ["custom", "lela_jsonl"],
+        "knowledge_bases": ["custom"],
     }
 
 
@@ -598,7 +598,7 @@ if __name__ == "__main__":
                         choices=components["knowledge_bases"],
                         value="custom",
                         label="KB Format",
-                        info="custom: requires id field, lela_jsonl: uses title as id",
+                        info="JSONL format with fields: id (optional), title, description",
                     )
                 
                 run_btn = gr.Button("Run Pipeline", variant="primary", size="lg")
@@ -690,7 +690,7 @@ if __name__ == "__main__":
         gr.Markdown("""
 ## Quick Start
 
-1. **Upload Knowledge Base**: Provide a JSONL file with entities (required fields: `id`, `title`, `description` for custom; `title`, `description` for lela_jsonl)
+1. **Upload Knowledge Base**: Provide a JSONL file with entities (fields: `title`, `description`, and optional `id`)
 2. **Enter Text or Upload File**: Input text directly or upload a document
 3. **Configure Pipeline**: Select spaCy components and adjust parameters
 4. **Run**: Click "Run Pipeline" to process

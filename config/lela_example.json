@@ -39,11 +39,9 @@
     }
   },
   "knowledge_base": {
-    "name": "lela_jsonl",
+    "name": "custom",
     "params": {
-      "path": "entities.jsonl",
-      "title_field": "title",
-      "description_field": "description"
+      "path": "entities.jsonl"
     }
   }
 }

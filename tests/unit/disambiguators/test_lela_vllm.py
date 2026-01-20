@@ -10,7 +10,7 @@ import spacy
 from spacy.tokens import Span
 
 from ner_pipeline.types import Candidate, Document, Entity, Mention
-from ner_pipeline.knowledge_bases.lela_jsonl import LELAJSONLKnowledgeBase
+from ner_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
 
 
 class TestLELAvLLMDisambiguatorComponent:
@@ -34,15 +34,15 @@ class TestLELAvLLMDisambiguatorComponent:
         os.unlink(path)
 
     @pytest.fixture
-    def kb(self, temp_kb_file: str) -> LELAJSONLKnowledgeBase:
-        return LELAJSONLKnowledgeBase(path=temp_kb_file)
+    def kb(self, temp_kb_file: str) -> CustomJSONLKnowledgeBase:
+        return CustomJSONLKnowledgeBase(path=temp_kb_file)
 
     @pytest.fixture
-    def sample_candidates(self) -> list[tuple[str, str]]:
+    def sample_candidates(self) -> list[Candidate]:
         return [
-            ("Barack Obama", "44th US President"),
-            ("Michelle Obama", "Former First Lady"),
-            ("Joe Biden", "46th US President"),
+            Candidate(entity_id="Barack Obama", description="44th US President"),
+            Candidate(entity_id="Michelle Obama", description="Former First Lady"),
+            Candidate(entity_id="Joe Biden", description="46th US President"),
         ]
 
     @pytest.fixture
@@ -61,7 +61,7 @@ class TestLELAvLLMDisambiguatorComponent:
         # Component returns doc unchanged when KB not initialized (logs warning)
         doc = nlp("Test")
         doc.ents = [Span(doc, 0, 1, label="ENTITY")]
-        doc.ents[0]._.candidates = [("Test", "Desc")]
+        doc.ents[0]._.candidates = [Candidate(entity_id="Test", description="Desc")]
         result = component(doc)
         # resolved_entity should remain None since KB is not set
         assert result.ents[0]._.resolved_entity is None
@@ -132,7 +132,7 @@ class TestLELAvLLMDisambiguatorComponent:
         component = LELAvLLMDisambiguatorComponent(nlp=nlp, add_none_candidate=False)
         component.initialize(kb)
 
-        candidates = [("Barack Obama", "44th US President")]
+        candidates = [Candidate(entity_id="Barack Obama", description="44th US President")]
 
         doc = nlp("Obama was president.")
         doc.ents = [Span(doc, 0, 1, label="ENTITY")]
@@ -333,7 +333,7 @@ class TestLELAvLLMDisambiguatorConfig:
             path = f.name
 
         try:
-            kb = LELAJSONLKnowledgeBase(path=path)
+            kb = CustomJSONLKnowledgeBase(path=path)
 
             from ner_pipeline.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
             nlp = spacy.blank("en")
@@ -359,7 +359,7 @@ class TestLELAvLLMDisambiguatorConfig:
             path = f.name
 
         try:
-            kb = LELAJSONLKnowledgeBase(path=path)
+            kb = CustomJSONLKnowledgeBase(path=path)
 
             from ner_pipeline.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
             nlp = spacy.blank("en")
@@ -383,7 +383,7 @@ class TestLELAvLLMDisambiguatorConfig:
             path = f.name
 
         try:
-            kb = LELAJSONLKnowledgeBase(path=path)
+            kb = CustomJSONLKnowledgeBase(path=path)
 
             from ner_pipeline.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
             nlp = spacy.blank("en")

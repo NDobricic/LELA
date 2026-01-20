@@ -309,7 +309,7 @@ spaCy's built-in NER does not have explicit context limits and processes documen
 
 ## Candidate Generation Components
 
-Candidate components populate `ent._.candidates` with `List[Tuple[str, str]]` (title, description).
+Candidate components populate `ent._.candidates` with `List[Candidate]` objects (each with `entity_id`, `score`, and `description` fields).
 
 **Location:** `ner_pipeline/spacy_components/candidates.py`
 

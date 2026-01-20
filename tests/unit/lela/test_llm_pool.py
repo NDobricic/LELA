@@ -118,8 +118,8 @@ class TestVLLMInstanceManagement:
         mock_vllm.LLM.return_value = mock_llm
         mock_get_vllm.return_value = mock_vllm
 
-        # Clear cache first
-        clear_vllm_instances()
+        # Clear cache first (force=True required to actually clear)
+        clear_vllm_instances(force=True)
 
         result = get_vllm_instance(
             model_name="test-model",
@@ -138,7 +138,7 @@ class TestVLLMInstanceManagement:
         mock_vllm.LLM.return_value = mock_llm
         mock_get_vllm.return_value = mock_vllm
 
-        clear_vllm_instances()
+        clear_vllm_instances(force=True)
 
         llm1 = get_vllm_instance("model-a", tensor_parallel_size=1)
         llm2 = get_vllm_instance("model-a", tensor_parallel_size=1)
@@ -153,7 +153,7 @@ class TestVLLMInstanceManagement:
         mock_vllm.LLM.side_effect = [MagicMock(), MagicMock()]
         mock_get_vllm.return_value = mock_vllm
 
-        clear_vllm_instances()
+        clear_vllm_instances(force=True)
 
         llm1 = get_vllm_instance("model-a", tensor_parallel_size=1)
         llm2 = get_vllm_instance("model-a", tensor_parallel_size=2)
@@ -166,7 +166,7 @@ class TestVLLMInstanceManagement:
         mock_vllm = MagicMock()
         mock_get_vllm.return_value = mock_vllm
 
-        clear_vllm_instances()
+        clear_vllm_instances(force=True)
 
         get_vllm_instance("model-x", tensor_parallel_size=1, max_model_len=4096)
 

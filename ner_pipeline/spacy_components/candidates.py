@@ -9,7 +9,7 @@ Provides factories and components for candidate generation:
 """
 
 import logging
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 from spacy.language import Language
@@ -23,7 +23,7 @@ from ner_pipeline.lela.config import (
 )
 from ner_pipeline.lela.llm_pool import embedder_pool
 from ner_pipeline.utils import ensure_candidates_extension
-from ner_pipeline.types import ProgressCallback
+from ner_pipeline.types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ class LELABM25CandidatesComponent:
     BM25 candidate generation component for spaCy.
 
     Uses bm25s library with Stemmer for efficient BM25 retrieval.
-    Candidates are stored in span._.candidates as List[Tuple[str, str]] (title, description).
+    Candidates are stored in span._.candidates as List[Candidate].
     """
 
     def __init__(
@@ -135,7 +135,7 @@ class LELABM25CandidatesComponent:
         self.retriever = None
         self.stemmer = None
         self.tokenizer = None
-        
+
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
@@ -153,11 +153,12 @@ class LELABM25CandidatesComponent:
         if not self.entities:
             raise ValueError("Knowledge base is empty.")
 
-        # Build corpus
+        # Build corpus - include entity ID for proper resolution
         self.corpus_records = []
         corpus_texts = []
         for entity in self.entities:
             record = {
+                "id": entity.id,
                 "title": entity.title,
                 "description": entity.description or "",
             }
@@ -217,12 +218,17 @@ class LELABM25CandidatesComponent:
             candidates_docs = results.documents[0]
             scores = results.scores[0] if hasattr(results, 'scores') else [0.0] * len(candidates_docs)
 
-            # Store as LELA format: List[Tuple[str, str]] (title, description)
+            # Store as List[Candidate] with entity ID for proper resolution
             candidates = []
             candidate_scores = []
             for j, record in enumerate(candidates_docs):
-                candidates.append((record["title"], record["description"]))
-                candidate_scores.append(float(scores[j]) if j < len(scores) else 0.0)
+                score = float(scores[j]) if j < len(scores) else 0.0
+                candidates.append(Candidate(
+                    entity_id=record["id"],
+                    score=score,
+                    description=record["description"],
+                ))
+                candidate_scores.append(score)
 
             ent._.candidates = candidates
             ent._.candidate_scores = candidate_scores
@@ -273,7 +279,7 @@ class LELADenseCandidatesComponent:
     Dense retrieval candidate generation component for spaCy.
 
     Uses OpenAI-compatible embeddings and FAISS for nearest neighbor search.
-    Candidates are stored in span._.candidates as List[Tuple[str, str]].
+    Candidates are stored in span._.candidates as List[Candidate].
     """
 
     def __init__(
@@ -388,13 +394,18 @@ class LELADenseCandidatesComponent:
             k = min(self.top_k, len(self.entities))
             scores, indices = self.index.search(query_embedding, k)
 
-            # Build candidates as LELA format
+            # Build candidates as List[Candidate] with entity ID
             candidates = []
             candidate_scores = []
             for score, idx in zip(scores[0], indices[0]):
                 entity = self.entities[int(idx)]
-                candidates.append((entity.title, entity.description or ""))
-                candidate_scores.append(float(score))
+                score_val = float(score)
+                candidates.append(Candidate(
+                    entity_id=entity.id,
+                    score=score_val,
+                    description=entity.description,
+                ))
+                candidate_scores.append(score_val)
 
             ent._.candidates = candidates
             ent._.candidate_scores = candidate_scores
@@ -481,14 +492,19 @@ class FuzzyCandidatesComponent:
             
             results = process.extract(ent.text, self.titles, limit=self.top_k)
 
-            # Build candidates as LELA format
+            # Build candidates as List[Candidate] with entity ID
             candidates = []
             candidate_scores = []
             for title, score, idx in results:
                 entity = self.entities[idx]
-                candidates.append((entity.title, entity.description or ""))
                 # Normalize fuzzy score from 0-100 to 0-1
-                candidate_scores.append(float(score) / 100.0)
+                score_val = float(score) / 100.0
+                candidates.append(Candidate(
+                    entity_id=entity.id,
+                    score=score_val,
+                    description=entity.description,
+                ))
+                candidate_scores.append(score_val)
 
             ent._.candidates = candidates
             ent._.candidate_scores = candidate_scores
@@ -592,13 +608,18 @@ class BM25CandidatesComponent:
             # Get top-k indices
             top_indices = np.argsort(scores)[::-1][:self.top_k]
 
-            # Build candidates
+            # Build candidates as List[Candidate] with entity ID
             candidates = []
             candidate_scores = []
             for idx in top_indices:
                 entity = self.entities[idx]
-                candidates.append((entity.title, entity.description or ""))
-                candidate_scores.append(float(scores[idx]))
+                score_val = float(scores[idx])
+                candidates.append(Candidate(
+                    entity_id=entity.id,
+                    score=score_val,
+                    description=entity.description,
+                ))
+                candidate_scores.append(score_val)
 
             ent._.candidates = candidates
             ent._.candidate_scores = candidate_scores
