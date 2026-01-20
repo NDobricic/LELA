@@ -4,100 +4,120 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from ner_pipeline.lela.llm_pool import (
-    EmbedderPool,
-    embedder_pool,
-    _get_openai,
+    _get_sentence_transformers,
+    get_sentence_transformer_instance,
+    clear_sentence_transformer_instances,
     _get_vllm,
     get_vllm_instance,
     clear_vllm_instances,
 )
 
 
-class TestEmbedderPool:
-    """Tests for EmbedderPool singleton class."""
+class TestSentenceTransformerPool:
+    """Tests for SentenceTransformer singleton functions."""
 
-    def test_singleton_pattern(self):
-        pool1 = EmbedderPool()
-        pool2 = EmbedderPool()
-        assert pool1 is pool2
+    def test_get_sentence_transformers_raises_on_missing(self):
+        # Just verify the function exists and is callable
+        assert callable(_get_sentence_transformers)
 
-    def test_global_embedder_pool_exists(self):
-        assert embedder_pool is not None
-        assert isinstance(embedder_pool, EmbedderPool)
+    @patch("ner_pipeline.lela.llm_pool._get_sentence_transformers")
+    @patch.dict("sys.modules", {"torch": MagicMock()})
+    def test_get_sentence_transformer_instance_creates_model(self, mock_get_st):
+        import sys
+        mock_torch = sys.modules["torch"]
+        mock_torch.float16 = "float16"
 
-    @patch("ner_pipeline.lela.llm_pool._get_openai")
-    def test_get_client_creates_client(self, mock_get_openai):
-        mock_openai = MagicMock()
-        mock_get_openai.return_value = mock_openai
-        mock_client = MagicMock()
-        mock_openai.OpenAI.return_value = mock_client
+        mock_st_module = MagicMock()
+        mock_model = MagicMock()
+        mock_st_module.SentenceTransformer.return_value = mock_model
+        mock_get_st.return_value = mock_st_module
 
-        pool = EmbedderPool()
-        pool._clients.clear()  # Reset for testing
+        # Clear cache first
+        clear_sentence_transformer_instances(force=True)
 
-        client = pool.get_client(
+        result = get_sentence_transformer_instance(
             model_name="test-model",
-            base_url="http://test",
-            port=9000,
+            device="cuda",
         )
 
-        mock_openai.OpenAI.assert_called_once()
-        call_kwargs = mock_openai.OpenAI.call_args[1]
-        assert "http://test:9000/v1" in call_kwargs["base_url"]
+        mock_st_module.SentenceTransformer.assert_called_once()
+        call_kwargs = mock_st_module.SentenceTransformer.call_args
+        assert call_kwargs[0][0] == "test-model"
+        assert call_kwargs[1]["device"] == "cuda"
+        assert call_kwargs[1]["trust_remote_code"] is True
 
-    @patch("ner_pipeline.lela.llm_pool._get_openai")
-    def test_get_client_reuses_connection(self, mock_get_openai):
-        mock_openai = MagicMock()
-        mock_get_openai.return_value = mock_openai
-        mock_client = MagicMock()
-        mock_openai.OpenAI.return_value = mock_client
+    @patch("ner_pipeline.lela.llm_pool._get_sentence_transformers")
+    @patch.dict("sys.modules", {"torch": MagicMock()})
+    def test_get_sentence_transformer_instance_reuses_model(self, mock_get_st):
+        import sys
+        mock_torch = sys.modules["torch"]
+        mock_torch.float16 = "float16"
 
-        pool = EmbedderPool()
-        pool._clients.clear()
+        mock_st_module = MagicMock()
+        mock_model = MagicMock()
+        mock_st_module.SentenceTransformer.return_value = mock_model
+        mock_get_st.return_value = mock_st_module
 
-        client1 = pool.get_client("model1", "http://test", 9000)
-        client2 = pool.get_client("model2", "http://test", 9000)  # Same host:port
+        clear_sentence_transformer_instances(force=True)
 
-        # Should only create one client for the same host:port
-        assert mock_openai.OpenAI.call_count == 1
+        model1 = get_sentence_transformer_instance("model-a", device="cuda")
+        model2 = get_sentence_transformer_instance("model-a", device="cuda")
 
-    @patch("ner_pipeline.lela.llm_pool._get_openai")
-    def test_embed_calls_client(self, mock_get_openai):
-        mock_openai = MagicMock()
-        mock_get_openai.return_value = mock_openai
+        # Should only create once
+        assert mock_st_module.SentenceTransformer.call_count == 1
+        assert model1 is model2
 
-        mock_response = MagicMock()
-        mock_response.data = [
-            MagicMock(embedding=[0.1, 0.2, 0.3]),
-            MagicMock(embedding=[0.4, 0.5, 0.6]),
-        ]
-        mock_client = MagicMock()
-        mock_client.embeddings.create.return_value = mock_response
-        mock_openai.OpenAI.return_value = mock_client
+    @patch("ner_pipeline.lela.llm_pool._get_sentence_transformers")
+    @patch.dict("sys.modules", {"torch": MagicMock()})
+    def test_different_devices_create_different_instances(self, mock_get_st):
+        import sys
+        mock_torch = sys.modules["torch"]
+        mock_torch.float16 = "float16"
 
-        pool = EmbedderPool()
-        pool._clients.clear()
+        mock_st_module = MagicMock()
+        mock_st_module.SentenceTransformer.side_effect = [MagicMock(), MagicMock()]
+        mock_get_st.return_value = mock_st_module
 
-        embeddings = pool.embed(
-            texts=["text1", "text2"],
-            model_name="test-model",
-            base_url="http://test",
-            port=9000,
-        )
+        clear_sentence_transformer_instances(force=True)
 
-        assert len(embeddings) == 2
-        assert embeddings[0] == [0.1, 0.2, 0.3]
-        assert embeddings[1] == [0.4, 0.5, 0.6]
+        model1 = get_sentence_transformer_instance("model-a", device="cuda")
+        model2 = get_sentence_transformer_instance("model-a", device="cpu")
+
+        # Different devices should create different instances
+        assert mock_st_module.SentenceTransformer.call_count == 2
+
+    def test_clear_sentence_transformer_instances_no_force(self):
+        # Should not raise and should do nothing without force=True
+        clear_sentence_transformer_instances()
+
+    @patch("ner_pipeline.lela.llm_pool._get_sentence_transformers")
+    @patch.dict("sys.modules", {"torch": MagicMock()})
+    def test_clear_sentence_transformer_instances_force(self, mock_get_st):
+        import sys
+        mock_torch = sys.modules["torch"]
+        mock_torch.float16 = "float16"
+        mock_torch.cuda.is_available.return_value = False
+
+        mock_st_module = MagicMock()
+        mock_model = MagicMock()
+        mock_st_module.SentenceTransformer.return_value = mock_model
+        mock_get_st.return_value = mock_st_module
+
+        clear_sentence_transformer_instances(force=True)
+
+        get_sentence_transformer_instance("test-model")
+
+        # Clear with force
+        clear_sentence_transformer_instances(force=True)
+
+        # Model should be created again on next call
+        get_sentence_transformer_instance("test-model")
+
+        assert mock_st_module.SentenceTransformer.call_count == 2
 
 
 class TestLazyImports:
     """Tests for lazy import functions."""
-
-    def test_get_openai_raises_on_missing(self):
-        with patch.dict("sys.modules", {"openai": None}):
-            # This is tricky to test without actually uninstalling openai
-            # Just verify the function exists and is callable
-            assert callable(_get_openai)
 
     def test_get_vllm_raises_on_missing(self):
         # Just verify the function exists

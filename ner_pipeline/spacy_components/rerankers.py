@@ -21,7 +21,7 @@ from ner_pipeline.lela.config import (
     SPAN_OPEN,
     SPAN_CLOSE,
 )
-from ner_pipeline.lela.llm_pool import embedder_pool
+from ner_pipeline.lela.llm_pool import get_sentence_transformer_instance
 from ner_pipeline.utils import ensure_candidates_extension
 from ner_pipeline.types import Candidate, ProgressCallback
 
@@ -37,8 +37,7 @@ logger = logging.getLogger(__name__)
     default_config={
         "model_name": DEFAULT_EMBEDDER_MODEL,
         "top_k": RERANKER_TOP_K,
-        "base_url": "http://localhost",
-        "port": 8000,
+        "device": None,
     },
 )
 def create_lela_embedder_reranker_component(
@@ -46,16 +45,14 @@ def create_lela_embedder_reranker_component(
     name: str,
     model_name: str,
     top_k: int,
-    base_url: str,
-    port: int,
+    device: Optional[str],
 ):
     """Factory for LELA embedder reranker component."""
     return LELAEmbedderRerankerComponent(
         nlp=nlp,
         model_name=model_name,
         top_k=top_k,
-        base_url=base_url,
-        port=port,
+        device=device,
     )
 
 
@@ -63,7 +60,7 @@ class LELAEmbedderRerankerComponent:
     """
     Embedding-based reranker component for spaCy.
 
-    Uses OpenAI-compatible embeddings to rerank candidates by cosine similarity.
+    Uses SentenceTransformers to rerank candidates by cosine similarity.
     The mention is marked in the document text with brackets for context.
     """
 
@@ -72,30 +69,26 @@ class LELAEmbedderRerankerComponent:
         nlp: Language,
         model_name: str = DEFAULT_EMBEDDER_MODEL,
         top_k: int = RERANKER_TOP_K,
-        base_url: str = "http://localhost",
-        port: int = 8000,
+        device: Optional[str] = None,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
-        self.base_url = base_url
-        self.port = port
+        self.device = device
 
         ensure_candidates_extension()
-        
+
+        # Load the embedding model
+        self.model = get_sentence_transformer_instance(model_name, device)
+
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
         logger.info(f"LELA embedder reranker initialized: {model_name}")
 
-    def _embed_texts(self, texts: List[str]) -> List[List[float]]:
-        """Embed texts using the embedding service."""
-        return embedder_pool.embed(
-            texts,
-            model_name=self.model_name,
-            base_url=self.base_url,
-            port=self.port,
-        )
+    def _embed_texts(self, texts: List[str]) -> np.ndarray:
+        """Embed texts using the SentenceTransformer model."""
+        return self.model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
 
     def _format_query(self, text: str, start: int, end: int) -> str:
         """Format query with marked mention in text."""
@@ -139,14 +132,9 @@ class LELAEmbedderRerankerComponent:
                 for c in candidates
             ]
 
-            # Embed all texts
+            # Embed all texts (already normalized by encode())
             all_texts = [query_text] + candidate_texts
             embeddings = self._embed_texts(all_texts)
-            embeddings = np.array(embeddings, dtype=np.float32)
-
-            # Normalize
-            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-            embeddings = embeddings / np.maximum(norms, 1e-9)
 
             # Compute cosine similarities
             query_embedding = embeddings[0:1]

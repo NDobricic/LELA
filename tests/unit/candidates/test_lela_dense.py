@@ -47,8 +47,11 @@ class TestLELADenseCandidatesComponent:
         return spacy.blank("en")
 
     @patch("ner_pipeline.spacy_components.candidates._get_faiss")
-    @patch("ner_pipeline.spacy_components.candidates.embedder_pool")
-    def test_requires_knowledge_base(self, mock_pool, mock_faiss, nlp):
+    @patch("ner_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    def test_requires_knowledge_base(self, mock_get_st, mock_faiss, nlp):
+        mock_model = MagicMock()
+        mock_get_st.return_value = mock_model
+
         from ner_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
         # Component returns doc unchanged when not initialized (logs warning)
@@ -59,8 +62,8 @@ class TestLELADenseCandidatesComponent:
         assert result.ents[0]._.candidates == []
 
     @patch("ner_pipeline.spacy_components.candidates._get_faiss")
-    @patch("ner_pipeline.spacy_components.candidates.embedder_pool")
-    def test_initialization_embeds_entities(self, mock_pool, mock_faiss, kb, nlp):
+    @patch("ner_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    def test_initialization_embeds_entities(self, mock_get_st, mock_faiss, kb, nlp):
         # Setup mocks
         mock_faiss_module = MagicMock()
         mock_faiss.return_value = mock_faiss_module
@@ -68,47 +71,53 @@ class TestLELADenseCandidatesComponent:
         mock_index = MagicMock()
         mock_faiss_module.IndexFlatIP.return_value = mock_index
 
-        # Return fake embeddings
-        mock_pool.embed.return_value = [
+        # Setup model mock
+        mock_model = MagicMock()
+        mock_model.encode.return_value = np.array([
             [0.1, 0.2, 0.3],
             [0.4, 0.5, 0.6],
             [0.7, 0.8, 0.9],
-        ]
+        ])
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
         component.initialize(kb)
 
-        # Should have called embed with entity texts
-        mock_pool.embed.assert_called_once()
-        embed_args = mock_pool.embed.call_args[0][0]
-        assert len(embed_args) == 3  # 3 entities
+        # Should have called encode with entity texts
+        mock_model.encode.assert_called_once()
+        encode_args = mock_model.encode.call_args[0][0]
+        assert len(encode_args) == 3  # 3 entities
 
         # Index should have been created
         mock_faiss_module.IndexFlatIP.assert_called_once_with(3)  # dim=3
 
     @patch("ner_pipeline.spacy_components.candidates._get_faiss")
-    @patch("ner_pipeline.spacy_components.candidates.embedder_pool")
-    def test_generate_returns_candidates(self, mock_pool, mock_faiss, kb, sample_doc, nlp):
+    @patch("ner_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    def test_generate_returns_candidates(self, mock_get_st, mock_faiss, kb, sample_doc, nlp):
         mock_faiss_module = MagicMock()
         mock_faiss.return_value = mock_faiss_module
 
         mock_index = MagicMock()
         mock_faiss_module.IndexFlatIP.return_value = mock_index
 
-        # Initial embedding for entities
-        mock_pool.embed.return_value = [
-            [0.1, 0.2, 0.3],
-            [0.4, 0.5, 0.6],
-            [0.7, 0.8, 0.9],
+        # Setup model mock with different return values for init and query
+        mock_model = MagicMock()
+        mock_model.encode.side_effect = [
+            # Initial embedding for entities
+            np.array([
+                [0.1, 0.2, 0.3],
+                [0.4, 0.5, 0.6],
+                [0.7, 0.8, 0.9],
+            ]),
+            # Query embedding
+            np.array([[0.2, 0.3, 0.4]]),
         ]
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
         component.initialize(kb)
-
-        # Query embedding
-        mock_pool.embed.return_value = [[0.2, 0.3, 0.4]]
 
         # Search results
         mock_index.search.return_value = (
@@ -125,21 +134,25 @@ class TestLELADenseCandidatesComponent:
         assert all(isinstance(c, Candidate) for c in candidates)
 
     @patch("ner_pipeline.spacy_components.candidates._get_faiss")
-    @patch("ner_pipeline.spacy_components.candidates.embedder_pool")
-    def test_candidates_have_descriptions(self, mock_pool, mock_faiss, kb, sample_doc, nlp):
+    @patch("ner_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    def test_candidates_have_descriptions(self, mock_get_st, mock_faiss, kb, sample_doc, nlp):
         mock_faiss_module = MagicMock()
         mock_faiss.return_value = mock_faiss_module
 
         mock_index = MagicMock()
         mock_faiss_module.IndexFlatIP.return_value = mock_index
 
-        mock_pool.embed.return_value = [[0.1, 0.2, 0.3]] * 3
+        mock_model = MagicMock()
+        mock_model.encode.side_effect = [
+            np.array([[0.1, 0.2, 0.3]] * 3),
+            np.array([[0.2, 0.3, 0.4]]),
+        ]
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
         component.initialize(kb)
 
-        mock_pool.embed.return_value = [[0.2, 0.3, 0.4]]
         mock_index.search.return_value = (
             np.array([[0.95]]),
             np.array([[0]]),  # First entity
@@ -155,19 +168,21 @@ class TestLELADenseCandidatesComponent:
         assert candidates[0].description == "44th US President"
 
     @patch("ner_pipeline.spacy_components.candidates._get_faiss")
-    @patch("ner_pipeline.spacy_components.candidates.embedder_pool")
-    def test_query_includes_task_instruction(self, mock_pool, mock_faiss, kb, sample_doc, nlp):
+    @patch("ner_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    def test_query_includes_task_instruction(self, mock_get_st, mock_faiss, kb, sample_doc, nlp):
         mock_faiss_module = MagicMock()
         mock_faiss.return_value = mock_faiss_module
 
         mock_index = MagicMock()
         mock_faiss_module.IndexFlatIP.return_value = mock_index
 
-        embed_calls = []
-        def capture_embed(texts, **kwargs):
-            embed_calls.append(texts)
-            return [[0.1, 0.2, 0.3]] * len(texts)
-        mock_pool.embed.side_effect = capture_embed
+        mock_model = MagicMock()
+        encode_calls = []
+        def capture_encode(texts, **kwargs):
+            encode_calls.append(texts)
+            return np.array([[0.1, 0.2, 0.3]] * len(texts))
+        mock_model.encode.side_effect = capture_encode
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
@@ -180,25 +195,31 @@ class TestLELADenseCandidatesComponent:
         doc = component(doc)
 
         # Second call is the query embedding
-        query_text = embed_calls[1][0]
+        query_text = encode_calls[1][0]
         assert "Instruct:" in query_text
         assert "Query:" in query_text
         assert "Obama" in query_text
 
     @patch("ner_pipeline.spacy_components.candidates._get_faiss")
-    @patch("ner_pipeline.spacy_components.candidates.embedder_pool")
-    def test_use_context_includes_context(self, mock_pool, mock_faiss, kb, sample_doc, nlp):
+    @patch("ner_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    def test_use_context_includes_context(self, mock_get_st, mock_faiss, kb, sample_doc, nlp):
+        from spacy.tokens import Span as SpacySpan
+        if not SpacySpan.has_extension("context"):
+            SpacySpan.set_extension("context", default=None)
+
         mock_faiss_module = MagicMock()
         mock_faiss.return_value = mock_faiss_module
 
         mock_index = MagicMock()
         mock_faiss_module.IndexFlatIP.return_value = mock_index
 
-        embed_calls = []
-        def capture_embed(texts, **kwargs):
-            embed_calls.append(texts)
-            return [[0.1, 0.2, 0.3]] * len(texts)
-        mock_pool.embed.side_effect = capture_embed
+        mock_model = MagicMock()
+        encode_calls = []
+        def capture_encode(texts, **kwargs):
+            encode_calls.append(texts)
+            return np.array([[0.1, 0.2, 0.3]] * len(texts))
+        mock_model.encode.side_effect = capture_encode
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=True)
@@ -211,26 +232,30 @@ class TestLELADenseCandidatesComponent:
         doc.ents[0]._.context = "was the 44th President"
         doc = component(doc)
 
-        query_text = embed_calls[1][0]
+        query_text = encode_calls[1][0]
         assert "Obama" in query_text
         assert "44th President" in query_text
 
     @patch("ner_pipeline.spacy_components.candidates._get_faiss")
-    @patch("ner_pipeline.spacy_components.candidates.embedder_pool")
-    def test_respects_top_k(self, mock_pool, mock_faiss, kb, sample_doc, nlp):
+    @patch("ner_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    def test_respects_top_k(self, mock_get_st, mock_faiss, kb, sample_doc, nlp):
         mock_faiss_module = MagicMock()
         mock_faiss.return_value = mock_faiss_module
 
         mock_index = MagicMock()
         mock_faiss_module.IndexFlatIP.return_value = mock_index
 
-        mock_pool.embed.return_value = [[0.1, 0.2, 0.3]] * 3
+        mock_model = MagicMock()
+        mock_model.encode.side_effect = [
+            np.array([[0.1, 0.2, 0.3]] * 3),
+            np.array([[0.2, 0.3, 0.4]]),
+        ]
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=2, use_context=False)
         component.initialize(kb)
 
-        mock_pool.embed.return_value = [[0.2, 0.3, 0.4]]
         mock_index.search.return_value = (
             np.array([[0.95, 0.85]]),
             np.array([[0, 1]]),

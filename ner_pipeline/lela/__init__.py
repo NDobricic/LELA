@@ -32,7 +32,8 @@ from .prompts import (
 )
 
 from .llm_pool import (
-    embedder_pool,
+    get_sentence_transformer_instance,
+    clear_sentence_transformer_instances,
     get_vllm_instance,
     clear_vllm_instances,
 )
@@ -56,7 +57,8 @@ __all__ = [
     "create_disambiguation_messages",
     "mark_mention_in_text",
     # LLM Pool
-    "embedder_pool",
+    "get_sentence_transformer_instance",
+    "clear_sentence_transformer_instances",
     "get_vllm_instance",
     "clear_vllm_instances",
 ]

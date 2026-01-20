@@ -27,19 +27,21 @@ class TestLELAEmbedderRerankerComponent:
     def nlp(self):
         return spacy.blank("en")
 
-    @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
+    @patch("ner_pipeline.spacy_components.rerankers.get_sentence_transformer_instance")
     def test_rerank_returns_candidates(
-        self, mock_pool, sample_candidates, nlp
+        self, mock_get_st, sample_candidates, nlp
     ):
-        # Mock embeddings
-        mock_pool.embed.return_value = [
+        # Mock embedding model
+        mock_model = MagicMock()
+        mock_model.encode.return_value = np.array([
             [0.1, 0.2, 0.3],  # query
             [0.2, 0.3, 0.4],  # E1
             [0.3, 0.4, 0.5],  # E2
             [0.4, 0.5, 0.6],  # E3
             [0.5, 0.6, 0.7],  # E4
             [0.6, 0.7, 0.8],  # E5
-        ]
+        ])
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
@@ -53,11 +55,13 @@ class TestLELAEmbedderRerankerComponent:
         assert len(result) == 3
         assert all(isinstance(c, Candidate) for c in result)
 
-    @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
+    @patch("ner_pipeline.spacy_components.rerankers.get_sentence_transformer_instance")
     def test_rerank_respects_top_k(
-        self, mock_pool, sample_candidates, nlp
+        self, mock_get_st, sample_candidates, nlp
     ):
-        mock_pool.embed.return_value = [[0.1, 0.2, 0.3]] * 6
+        mock_model = MagicMock()
+        mock_model.encode.return_value = np.array([[0.1, 0.2, 0.3]] * 6)
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=2)
@@ -70,10 +74,12 @@ class TestLELAEmbedderRerankerComponent:
         result = doc.ents[0]._.candidates
         assert len(result) == 2
 
-    @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
+    @patch("ner_pipeline.spacy_components.rerankers.get_sentence_transformer_instance")
     def test_rerank_returns_all_if_fewer_than_top_k(
-        self, mock_pool, nlp
+        self, mock_get_st, nlp
     ):
+        mock_model = MagicMock()
+        mock_get_st.return_value = mock_model
         candidates = [Candidate(entity_id="E1", description="Desc 1")]
 
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
@@ -88,10 +94,13 @@ class TestLELAEmbedderRerankerComponent:
         # Should return all candidates without calling embeddings
         assert len(result) == 1
 
-    @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
+    @patch("ner_pipeline.spacy_components.rerankers.get_sentence_transformer_instance")
     def test_rerank_empty_candidates(
-        self, mock_pool, nlp
+        self, mock_get_st, nlp
     ):
+        mock_model = MagicMock()
+        mock_get_st.return_value = mock_model
+
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
 
@@ -103,20 +112,22 @@ class TestLELAEmbedderRerankerComponent:
         result = doc.ents[0]._.candidates
         assert result == []
 
-    @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
+    @patch("ner_pipeline.spacy_components.rerankers.get_sentence_transformer_instance")
     def test_rerank_sorts_by_similarity(
-        self, mock_pool, sample_candidates, nlp
+        self, mock_get_st, sample_candidates, nlp
     ):
+        mock_model = MagicMock()
         # Create embeddings where E3 is most similar to query
         query_emb = [1.0, 0.0, 0.0]
-        mock_pool.embed.return_value = [
+        mock_model.encode.return_value = np.array([
             query_emb,
             [0.1, 0.9, 0.0],  # E1 - low similarity
             [0.2, 0.8, 0.0],  # E2
             [0.9, 0.1, 0.0],  # E3 - high similarity
             [0.3, 0.7, 0.0],  # E4
             [0.4, 0.6, 0.0],  # E5
-        ]
+        ])
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
@@ -130,15 +141,17 @@ class TestLELAEmbedderRerankerComponent:
         # E3 should be first (highest similarity)
         assert result[0].entity_id == "E3"
 
-    @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
+    @patch("ner_pipeline.spacy_components.rerankers.get_sentence_transformer_instance")
     def test_query_includes_marked_mention(
-        self, mock_pool, sample_candidates, nlp
+        self, mock_get_st, sample_candidates, nlp
     ):
-        embed_calls = []
-        def capture_embed(texts, **kwargs):
-            embed_calls.append(texts)
-            return [[0.1, 0.2, 0.3]] * len(texts)
-        mock_pool.embed.side_effect = capture_embed
+        mock_model = MagicMock()
+        encode_calls = []
+        def capture_encode(texts, **kwargs):
+            encode_calls.append(texts)
+            return np.array([[0.1, 0.2, 0.3]] * len(texts))
+        mock_model.encode.side_effect = capture_encode
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
@@ -148,14 +161,14 @@ class TestLELAEmbedderRerankerComponent:
         doc.ents[0]._.candidates = sample_candidates
         doc = reranker(doc)
 
-        # First text in embed call is the query
-        query_text = embed_calls[0][0]
+        # First text in encode call is the query
+        query_text = encode_calls[0][0]
         assert "[Obama]" in query_text  # Mention should be marked
         assert "Instruct:" in query_text
 
-    @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
+    @patch("ner_pipeline.spacy_components.rerankers.get_sentence_transformer_instance")
     def test_candidates_formatted_for_embedding(
-        self, mock_pool, nlp
+        self, mock_get_st, nlp
     ):
         candidates = [
             Candidate(entity_id="Entity A", description="Description A"),
@@ -163,11 +176,13 @@ class TestLELAEmbedderRerankerComponent:
             Candidate(entity_id="Entity C", description=None),  # No description
         ]
 
-        embed_calls = []
-        def capture_embed(texts, **kwargs):
-            embed_calls.append(texts)
-            return [[0.1, 0.2, 0.3]] * len(texts)
-        mock_pool.embed.side_effect = capture_embed
+        mock_model = MagicMock()
+        encode_calls = []
+        def capture_encode(texts, **kwargs):
+            encode_calls.append(texts)
+            return np.array([[0.1, 0.2, 0.3]] * len(texts))
+        mock_model.encode.side_effect = capture_encode
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=2)
@@ -178,18 +193,20 @@ class TestLELAEmbedderRerankerComponent:
         doc = reranker(doc)
 
         # Check candidate formatting
-        texts = embed_calls[0]
+        texts = encode_calls[0]
         # Query + 3 candidates = 4 texts
         assert len(texts) == 4
         assert "Entity A: Description A" in texts[1]
         assert "Entity B: Description B" in texts[2]
         assert "Entity C" in texts[3]  # No description
 
-    @patch("ner_pipeline.spacy_components.rerankers.embedder_pool")
+    @patch("ner_pipeline.spacy_components.rerankers.get_sentence_transformer_instance")
     def test_preserves_descriptions(
-        self, mock_pool, sample_candidates, nlp
+        self, mock_get_st, sample_candidates, nlp
     ):
-        mock_pool.embed.return_value = [[0.1, 0.2, 0.3]] * 6
+        mock_model = MagicMock()
+        mock_model.encode.return_value = np.array([[0.1, 0.2, 0.3]] * 6)
+        mock_get_st.return_value = mock_model
 
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
@@ -205,18 +222,21 @@ class TestLELAEmbedderRerankerComponent:
             original = next(o for o in sample_candidates if o.entity_id == candidate.entity_id)
             assert candidate.description == original.description
 
-    def test_initialization_with_custom_params(self):
+    @patch("ner_pipeline.spacy_components.rerankers.get_sentence_transformer_instance")
+    def test_initialization_with_custom_params(self, mock_get_st):
+        mock_model = MagicMock()
+        mock_get_st.return_value = mock_model
+
         nlp = spacy.blank("en")
         from ner_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(
             nlp=nlp,
             model_name="custom-model",
             top_k=5,
-            base_url="http://custom-host",
-            port=9000,
+            device="cuda",
         )
 
         assert reranker.model_name == "custom-model"
         assert reranker.top_k == 5
-        assert reranker.base_url == "http://custom-host"
-        assert reranker.port == 9000
+        assert reranker.device == "cuda"
+        mock_get_st.assert_called_once_with("custom-model", "cuda")

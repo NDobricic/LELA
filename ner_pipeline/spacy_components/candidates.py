@@ -21,7 +21,7 @@ from ner_pipeline.lela.config import (
     DEFAULT_EMBEDDER_MODEL,
     RETRIEVER_TASK,
 )
-from ner_pipeline.lela.llm_pool import embedder_pool
+from ner_pipeline.lela.llm_pool import get_sentence_transformer_instance
 from ner_pipeline.utils import ensure_candidates_extension
 from ner_pipeline.types import Candidate, ProgressCallback
 
@@ -249,8 +249,7 @@ class LELABM25CandidatesComponent:
     default_config={
         "model_name": DEFAULT_EMBEDDER_MODEL,
         "top_k": CANDIDATES_TOP_K,
-        "base_url": "http://localhost",
-        "port": 8000,
+        "device": None,
         "use_context": True,
     },
 )
@@ -259,8 +258,7 @@ def create_lela_dense_candidates_component(
     name: str,
     model_name: str,
     top_k: int,
-    base_url: str,
-    port: int,
+    device: Optional[str],
     use_context: bool,
 ):
     """Factory for LELA dense candidates component."""
@@ -268,8 +266,7 @@ def create_lela_dense_candidates_component(
         nlp=nlp,
         model_name=model_name,
         top_k=top_k,
-        base_url=base_url,
-        port=port,
+        device=device,
         use_context=use_context,
     )
 
@@ -278,7 +275,7 @@ class LELADenseCandidatesComponent:
     """
     Dense retrieval candidate generation component for spaCy.
 
-    Uses OpenAI-compatible embeddings and FAISS for nearest neighbor search.
+    Uses SentenceTransformers and FAISS for nearest neighbor search.
     Candidates are stored in span._.candidates as List[Candidate].
     """
 
@@ -287,24 +284,25 @@ class LELADenseCandidatesComponent:
         nlp: Language,
         model_name: str = DEFAULT_EMBEDDER_MODEL,
         top_k: int = CANDIDATES_TOP_K,
-        base_url: str = "http://localhost",
-        port: int = 8000,
+        device: Optional[str] = None,
         use_context: bool = True,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
-        self.base_url = base_url
-        self.port = port
+        self.device = device
         self.use_context = use_context
 
         ensure_candidates_extension()
+
+        # Load the embedding model
+        self.model = get_sentence_transformer_instance(model_name, device)
 
         # Initialize lazily
         self.kb = None
         self.entities = None
         self.index = None
-        
+
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
@@ -328,13 +326,8 @@ class LELADenseCandidatesComponent:
 
         logger.info(f"Building dense index over {len(self.entities)} entities")
 
-        # Embed entities
+        # Embed entities (already normalized by encode())
         embeddings = self._embed_texts(entity_texts)
-        embeddings = np.array(embeddings, dtype=np.float32)
-
-        # Normalize
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        embeddings = embeddings / np.maximum(norms, 1e-9)
 
         # Build FAISS index
         dim = embeddings.shape[1]
@@ -343,14 +336,9 @@ class LELADenseCandidatesComponent:
 
         logger.info(f"Dense index built: {self.index.ntotal} vectors, dim={dim}")
 
-    def _embed_texts(self, texts: List[str]) -> List[List[float]]:
-        """Embed texts using the embedding service."""
-        return embedder_pool.embed(
-            texts,
-            model_name=self.model_name,
-            base_url=self.base_url,
-            port=self.port,
-        )
+    def _embed_texts(self, texts: List[str]) -> np.ndarray:
+        """Embed texts using the SentenceTransformer model."""
+        return self.model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
 
     def _format_query(self, mention_text: str, context: Optional[str] = None) -> str:
         """Format query with task instruction."""
@@ -381,14 +369,8 @@ class LELADenseCandidatesComponent:
                 context = ent._.context
             query_text = self._format_query(ent.text, context)
 
-            # Embed query
+            # Embed query (already normalized by encode())
             query_embedding = self._embed_texts([query_text])
-            query_embedding = np.array(query_embedding, dtype=np.float32)
-
-            # Normalize
-            norm = np.linalg.norm(query_embedding)
-            if norm > 0:
-                query_embedding = query_embedding / norm
 
             # Search
             k = min(self.top_k, len(self.entities))

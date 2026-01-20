@@ -2,14 +2,13 @@
 Singleton pool for managing expensive LLM and embedder instances.
 
 This module provides lazy initialization and reuse of:
-- OpenAI-compatible embedding clients
+- SentenceTransformer instances for embeddings
 - vLLM instances for text generation
 """
 
 import logging
 import os
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
 
 # Disable vLLM V1 engine and configure multiprocessing to work from worker threads
 os.environ.setdefault("VLLM_USE_V1", "0")
@@ -17,77 +16,98 @@ os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
 
 logger = logging.getLogger(__name__)
 
-# Placeholder for OpenAI client - imported lazily
-_openai_module = None
+
+# Placeholder for SentenceTransformers - imported lazily
+_sentence_transformers_module = None
+_sentence_transformer_instances: Dict[str, Any] = {}
 
 
-def _get_openai():
-    """Lazy import of openai module."""
-    global _openai_module
-    if _openai_module is None:
+def _get_sentence_transformers():
+    """Lazy import of sentence_transformers module."""
+    global _sentence_transformers_module
+    if _sentence_transformers_module is None:
         try:
-            import openai
-            _openai_module = openai
+            import sentence_transformers
+            _sentence_transformers_module = sentence_transformers
         except ImportError:
             raise ImportError(
-                "openai package required for LELA embedder. "
-                "Install with: pip install openai"
+                "sentence-transformers package required for embedding. "
+                "Install with: pip install sentence-transformers"
             )
-    return _openai_module
+    return _sentence_transformers_module
 
 
-@dataclass
-class EmbedderConfig:
-    """Configuration for an embedding client."""
-    model_name: str
-    base_url: str
-    port: int
-    api_key: str = "EMPTY"
+def get_sentence_transformer_instance(
+    model_name: str,
+    device: Optional[str] = None,
+):
+    """
+    Get or create a SentenceTransformer instance.
+
+    Args:
+        model_name: HuggingFace model ID (e.g., 'Qwen/Qwen3-Embedding-4B')
+        device: Device to load model on ('cuda', 'cpu', or None for auto)
+
+    Returns:
+        SentenceTransformer instance
+    """
+    key = f"{model_name}:{device or 'auto'}"
+
+    if key not in _sentence_transformer_instances:
+        sentence_transformers = _get_sentence_transformers()
+
+        logger.info(f"Loading SentenceTransformer model: {model_name}")
+
+        import torch
+        model_kwargs = {"torch_dtype": torch.float16}
+
+        model = sentence_transformers.SentenceTransformer(
+            model_name,
+            device=device,
+            model_kwargs=model_kwargs,
+            trust_remote_code=True,
+        )
+
+        _sentence_transformer_instances[key] = model
+        logger.info(f"SentenceTransformer model loaded: {model_name}")
+
+    return _sentence_transformer_instances[key]
 
 
-class EmbedderPool:
-    """Pool of OpenAI-compatible embedding clients."""
+def clear_sentence_transformer_instances(force: bool = False):
+    """
+    Clear all cached SentenceTransformer instances.
 
-    _instance: Optional["EmbedderPool"] = None
+    Args:
+        force: If True, actually delete instances and free GPU memory.
+               If False (default), do nothing - instances should be reused.
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._clients: Dict[str, Any] = {}
-        return cls._instance
+    Note: SentenceTransformer instances are expensive to create and should be
+    reused across pipeline runs. Only use force=True when shutting down.
+    """
+    global _sentence_transformer_instances
 
-    def get_client(
-        self,
-        model_name: str,
-        base_url: str = "http://localhost",
-        port: int = 8000,
-        api_key: str = "EMPTY",
-    ):
-        """Get or create an embedding client."""
-        key = f"{base_url}:{port}"
+    if not force:
+        return
 
-        if key not in self._clients:
-            openai = _get_openai()
-            api_base = f"{base_url}:{port}/v1"
-            self._clients[key] = openai.OpenAI(
-                api_key=api_key,
-                base_url=api_base,
-            )
-            logger.info(f"Created embedding client for {api_base}")
+    for key in list(_sentence_transformer_instances.keys()):
+        try:
+            logger.info(f"Shutting down SentenceTransformer instance: {key}")
+            del _sentence_transformer_instances[key]
+        except Exception as e:
+            logger.warning(f"Error cleaning up SentenceTransformer instance {key}: {e}")
 
-        return self._clients[key]
+    _sentence_transformer_instances.clear()
 
-    def embed(
-        self,
-        texts: List[str],
-        model_name: str,
-        base_url: str = "http://localhost",
-        port: int = 8000,
-    ) -> List[List[float]]:
-        """Embed texts using the specified model."""
-        client = self.get_client(model_name, base_url, port)
-        response = client.embeddings.create(input=texts, model=model_name)
-        return [data.embedding for data in response.data]
+    import gc
+    gc.collect()
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception as e:
+        logger.warning(f"Error clearing CUDA cache: {e}")
 
 
 # Placeholder for vLLM - imported lazily
@@ -189,7 +209,3 @@ def clear_vllm_instances(force: bool = False):
             torch.cuda.synchronize()
     except Exception as e:
         logger.warning(f"Error clearing CUDA cache: {e}")
-
-
-# Global singleton instances
-embedder_pool = EmbedderPool()
