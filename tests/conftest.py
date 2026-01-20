@@ -4,7 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 import pytest
 
@@ -264,3 +264,73 @@ def test_data_dir() -> Path:
 def sample_kb_path(test_data_dir: Path) -> Path:
     """Path to sample KB JSONL file."""
     return test_data_dir / "sample_kb.jsonl"
+
+
+# ---------------------------------------------------------------------------
+# App/CLI test fixtures
+# ---------------------------------------------------------------------------
+
+
+class MockGradioFile:
+    """Mock Gradio file object."""
+
+    def __init__(self, path: str):
+        self.name = path
+
+
+class MockGradioProgress:
+    """Mock Gradio progress callback."""
+
+    def __init__(self):
+        self.calls: List[Tuple] = []
+
+    def __call__(self, progress: float, desc: str = ""):
+        self.calls.append((progress, desc))
+
+
+@pytest.fixture
+def mock_gradio_file(temp_text_file: str) -> MockGradioFile:
+    """Mock Gradio file object pointing to temp text file."""
+    return MockGradioFile(temp_text_file)
+
+
+@pytest.fixture
+def mock_kb_file(temp_jsonl_kb: str) -> MockGradioFile:
+    """Mock Gradio file object pointing to temp KB file."""
+    return MockGradioFile(temp_jsonl_kb)
+
+
+@pytest.fixture
+def mock_progress() -> MockGradioProgress:
+    """Mock Gradio progress callback."""
+    return MockGradioProgress()
+
+
+@pytest.fixture
+def sample_pipeline_result() -> Dict:
+    """Sample result for format_highlighted_text testing."""
+    return {
+        "text": "Barack Obama was president.",
+        "entities": [
+            {
+                "text": "Barack Obama",
+                "start": 0,
+                "end": 12,
+                "label": "PERSON",
+                "entity_title": "Barack Obama",
+                "entity_id": "Q76",
+                "linking_confidence": 0.95,
+                "candidates": [],
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def temp_config_file(minimal_config_dict: Dict) -> Iterator[str]:
+    """Temporary config JSON file for CLI testing."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(minimal_config_dict, f)
+        path = f.name
+    yield path
+    os.unlink(path)
