@@ -173,7 +173,8 @@ def highlighted_to_html(highlighted: List[Tuple[str, Optional[str], Optional[Dic
         if label is None:
             parts.append(escaped_text)
         else:
-            color = color_map.get(label, "#808080")
+            # Use per-instance color if available, otherwise fall back to color_map
+            color = (entity_info.get("display_color") if entity_info else None) or color_map.get(label, "#808080")
             css_class = label_to_class(label)
 
             # Track count and store first entity info for each label (for legend popup)
@@ -334,7 +335,8 @@ def format_highlighted_text_with_threshold(
 ) -> Tuple[List[Tuple[str, Optional[str], Optional[Dict]]], Dict[str, str]]:
     """Convert pipeline result to highlighted format with confidence-based coloring.
 
-    Entities below the threshold are shown in gray.
+    Per-instance filtering: each mention is grayed individually based on its confidence.
+    Legend is grayed only when ALL instances of that entity are below threshold.
     Returns (highlighted_data, color_map) for use with highlighted_to_html().
     Each highlighted item is (text, label, entity_info) where entity_info contains details for popup.
     """
@@ -344,9 +346,9 @@ def format_highlighted_text_with_threshold(
     if not entities:
         return [(text, None, None)], {}
 
-    # Process entities: build labels and track max confidence per label
-    entity_data = []  # (entity, label, conf)
-    label_max_conf = {}  # Track max confidence for each unique label
+    # Process entities: build labels and check per-instance confidence
+    entity_data = []  # (entity, label, conf, is_below_threshold)
+    label_has_above = {}  # Track if ANY instance of this label is above threshold
 
     for entity in entities:
         conf = entity.get("linking_confidence_normalized")
@@ -357,34 +359,26 @@ def format_highlighted_text_with_threshold(
         else:
             label = f"{label_type} [NOT IN KB]"
 
-        entity_data.append((entity, label, conf))
+        # Per-instance: check if THIS instance is below threshold
+        # None confidence (unlinked) is treated as above threshold (not grayed)
+        is_below = conf is not None and conf < threshold
+        entity_data.append((entity, label, conf, is_below))
 
-        # Track max confidence for this label (None means unlinked, treat as above threshold)
-        if label not in label_max_conf:
-            label_max_conf[label] = conf
-        elif conf is not None:
-            if label_max_conf[label] is None or conf > label_max_conf[label]:
-                label_max_conf[label] = conf
+        # Track if any instance of this label is above threshold (for legend)
+        if label not in label_has_above:
+            label_has_above[label] = not is_below
+        elif not is_below:
+            label_has_above[label] = True
 
-    # Determine which labels are above/below threshold based on their max confidence
-    above_threshold_labels = []
-    below_threshold_labels = []
-
-    for label, max_conf in label_max_conf.items():
-        # Label is "low confidence" only if it has a confidence value AND it's below threshold
-        is_low = max_conf is not None and max_conf < threshold
-        if is_low:
-            below_threshold_labels.append(label)
-        else:
-            above_threshold_labels.append(label)
-
-    # Build color_map: above-threshold labels FIRST (for legend ordering), then below
+    # Build color_map for legend: gray only if ALL instances are below threshold
+    # Order: labels with at least one above-threshold instance first
     color_map = {}
+    above_labels = [l for l, has_above in label_has_above.items() if has_above]
+    below_labels = [l for l, has_above in label_has_above.items() if not has_above]
 
-    for label in above_threshold_labels:
+    for label in above_labels:
         color_map[label] = get_label_color(label)
-
-    for label in below_threshold_labels:
+    for label in below_labels:
         color_map[label] = GRAY_COLOR
 
     # Sort by position for text reconstruction
@@ -394,11 +388,14 @@ def format_highlighted_text_with_threshold(
     highlighted = []
     last_end = 0
 
-    for entity, label, conf in entity_data:
+    for entity, label, conf, is_below in entity_data:
         if entity["start"] > last_end:
             highlighted.append((text[last_end:entity["start"]], None, None))
 
-        # Build entity info dict for popup
+        # Determine color for THIS instance
+        instance_color = GRAY_COLOR if is_below else get_label_color(label)
+
+        # Build entity info dict for popup (includes per-instance color)
         entity_info = {
             "mention": entity["text"],
             "type": entity.get("label", "ENT"),
@@ -407,6 +404,7 @@ def format_highlighted_text_with_threshold(
             "kb_description": entity.get("entity_description"),
             "confidence": entity.get("linking_confidence"),
             "confidence_normalized": conf,
+            "display_color": instance_color,  # Per-instance color
         }
 
         highlighted.append((entity["text"], label, entity_info))
