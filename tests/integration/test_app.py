@@ -257,6 +257,9 @@ class TestRunPipeline:
             reranker_type="none",
             reranker_top_k=10,
             disambig_type="first",
+            tournament_batch_size=4,
+            tournament_shuffle=False,
+            tournament_thinking=False,
             kb_type="custom",
             progress=mock_progress,
         )
@@ -284,6 +287,9 @@ class TestRunPipeline:
             reranker_type="none",
             reranker_top_k=10,
             disambig_type="first",
+            tournament_batch_size=4,
+            tournament_shuffle=False,
+            tournament_thinking=False,
             kb_type="custom",
             progress=mock_progress,
         )
@@ -309,6 +315,9 @@ class TestRunPipeline:
             reranker_type="none",
             reranker_top_k=10,
             disambig_type="first",
+            tournament_batch_size=4,
+            tournament_shuffle=False,
+            tournament_thinking=False,
             kb_type="custom",
             progress=mock_progress,
         )
@@ -316,53 +325,57 @@ class TestRunPipeline:
         assert "entities" in result
 
     def test_run_pipeline_no_kb_error(self, mock_progress: MockGradioProgress):
-        """Raises error without KB file."""
-        import gradio as gr
-
-        with pytest.raises(gr.Error, match="Please upload a knowledge base"):
-            run_pipeline(
-                text_input="Some text",
-                file_input=None,
-                kb_file=None,
-                loader_type="text",
-                ner_type="simple",
-                spacy_model="en_core_web_sm",
-                gliner_model="urchade/gliner_large",
-                gliner_labels="",
-                gliner_threshold=0.5,
-                simple_min_len=3,
-                cand_type="fuzzy",
-                cand_top_k=10,
-                cand_use_context=True,
-                reranker_type="none",
-                reranker_top_k=10,
-                disambig_type="first",
-                kb_type="custom",
-                progress=mock_progress,
-            )
+        """Returns error without KB file."""
+        highlighted, stats, result = run_pipeline(
+            text_input="Some text",
+            file_input=None,
+            kb_file=None,
+            loader_type="text",
+            ner_type="simple",
+            spacy_model="en_core_web_sm",
+            gliner_model="urchade/gliner_large",
+            gliner_labels="",
+            gliner_threshold=0.5,
+            simple_min_len=3,
+            cand_type="fuzzy",
+            cand_top_k=10,
+            cand_use_context=True,
+            reranker_type="none",
+            reranker_top_k=10,
+            disambig_type="first",
+            tournament_batch_size=4,
+            tournament_shuffle=False,
+            tournament_thinking=False,
+            kb_type="custom",
+            progress=mock_progress,
+        )
+        assert "error" in result
+        assert "Knowledge Base" in result["error"]
 
     def test_run_pipeline_no_input_error(self, mock_kb_file: MockGradioFile, mock_progress: MockGradioProgress):
-        """Raises error without text or file input."""
-        import gradio as gr
-
-        with pytest.raises(gr.Error, match="Please provide either text input"):
-            run_pipeline(
-                text_input="",
-                file_input=None,
-                kb_file=mock_kb_file,
-                loader_type="text",
-                ner_type="simple",
-                spacy_model="en_core_web_sm",
-                gliner_model="urchade/gliner_large",
-                gliner_labels="",
-                gliner_threshold=0.5,
-                simple_min_len=3,
-                cand_type="fuzzy",
-                cand_top_k=10,
-                cand_use_context=True,
-                reranker_type="none",
-                reranker_top_k=10,
-                disambig_type="first",
-                kb_type="custom",
-                progress=mock_progress,
-            )
+        """Returns error without text or file input."""
+        highlighted, stats, result = run_pipeline(
+            text_input="",
+            file_input=None,
+            kb_file=mock_kb_file,
+            loader_type="text",
+            ner_type="simple",
+            spacy_model="en_core_web_sm",
+            gliner_model="urchade/gliner_large",
+            gliner_labels="",
+            gliner_threshold=0.5,
+            simple_min_len=3,
+            cand_type="fuzzy",
+            cand_top_k=10,
+            cand_use_context=True,
+            reranker_type="none",
+            reranker_top_k=10,
+            disambig_type="first",
+            tournament_batch_size=4,
+            tournament_shuffle=False,
+            tournament_thinking=False,
+            kb_type="custom",
+            progress=mock_progress,
+        )
+        assert "error" in result
+        assert "Input" in result["error"]
