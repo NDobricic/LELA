@@ -21,7 +21,7 @@ from ner_pipeline.lela.config import (
     SPAN_OPEN,
     SPAN_CLOSE,
 )
-from ner_pipeline.lela.llm_pool import get_sentence_transformer_instance
+from ner_pipeline.lela.llm_pool import get_sentence_transformer_instance, release_sentence_transformer
 from ner_pipeline.utils import ensure_candidates_extension
 from ner_pipeline.types import Candidate, ProgressCallback
 
@@ -62,6 +62,9 @@ class LELAEmbedderRerankerComponent:
 
     Uses SentenceTransformers to rerank candidates by cosine similarity.
     The mention is marked in the document text with brackets for context.
+    
+    Memory management: Model is loaded on-demand and released after use,
+    allowing it to be evicted if memory is needed for later stages.
     """
 
     def __init__(
@@ -78,17 +81,17 @@ class LELAEmbedderRerankerComponent:
 
         ensure_candidates_extension()
 
-        # Load the embedding model
-        self.model = get_sentence_transformer_instance(model_name, device)
+        # Model loaded on-demand in __call__, not here
+        # This allows lazy eviction when memory is needed
 
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
         logger.info(f"LELA embedder reranker initialized: {model_name}")
 
-    def _embed_texts(self, texts: List[str]) -> np.ndarray:
+    def _embed_texts(self, texts: List[str], model) -> np.ndarray:
         """Embed texts using the SentenceTransformer model."""
-        return self.model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
+        return model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
 
     def _format_query(self, text: str, start: int, end: int) -> str:
         """Format query with marked mention in text."""
@@ -110,59 +113,86 @@ class LELAEmbedderRerankerComponent:
         entities = list(doc.ents)
         num_entities = len(entities)
 
-        for i, ent in enumerate(entities):
-            # Report progress if callback is set
-            if self.progress_callback and num_entities > 0:
-                progress = i / num_entities
-                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                self.progress_callback(progress, f"Reranking {i+1}/{num_entities}: {ent_text}")
+        # Check if any entity needs reranking
+        needs_reranking = any(
+            len(getattr(ent._, "candidates", [])) > self.top_k
+            for ent in entities
+        )
+        
+        if not needs_reranking:
+            return doc
 
-            candidates = getattr(ent._, "candidates", [])
-            if not candidates:
-                continue
+        # Report model loading
+        if self.progress_callback:
+            self.progress_callback(0.0, f"Loading reranker model ({self.model_name.split('/')[-1]})...")
 
-            if len(candidates) <= self.top_k:
-                continue
+        # Load model for this stage (will reuse cached if available)
+        model = get_sentence_transformer_instance(self.model_name, self.device)
 
-            # Format query and candidates
-            query_text = self._format_query(text, ent.start_char, ent.end_char)
-            candidate_texts = [
-                self._format_candidate(c, self.kb) if hasattr(self, 'kb') else
-                f"{c.entity_id}: {c.description}" if c.description else c.entity_id
-                for c in candidates
-            ]
+        if self.progress_callback:
+            self.progress_callback(0.1, "Model loaded, reranking candidates...")
 
-            # Embed all texts (already normalized by encode())
-            all_texts = [query_text] + candidate_texts
-            embeddings = self._embed_texts(all_texts)
+        # Progress: 0.0-0.1 = model loading, 0.1-1.0 = processing entities
+        processing_start = 0.1
+        processing_range = 0.9
 
-            # Compute cosine similarities
-            query_embedding = embeddings[0:1]
-            candidate_embeddings = embeddings[1:]
-            similarities = np.dot(candidate_embeddings, query_embedding.T).flatten()
+        try:
+            for i, ent in enumerate(entities):
+                # Report progress if callback is set
+                if self.progress_callback and num_entities > 0:
+                    progress = processing_start + (i / num_entities) * processing_range
+                    ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                    self.progress_callback(progress, f"Reranking {i+1}/{num_entities}: {ent_text}")
 
-            # Sort by similarity and take top_k
-            scored_candidates = list(zip(candidates, similarities))
-            scored_candidates.sort(key=lambda x: x[1], reverse=True)
-            top_candidates = scored_candidates[:self.top_k]
+                candidates = getattr(ent._, "candidates", [])
+                if not candidates:
+                    continue
 
-            # Update candidates with new scores
-            reranked = []
-            reranked_scores = []
-            for candidate, score in top_candidates:
-                reranked.append(Candidate(
-                    entity_id=candidate.entity_id,
-                    score=float(score),
-                    description=candidate.description,
-                ))
-                reranked_scores.append(float(score))
+                if len(candidates) <= self.top_k:
+                    continue
 
-            ent._.candidates = reranked
-            ent._.candidate_scores = reranked_scores
+                # Format query and candidates
+                query_text = self._format_query(text, ent.start_char, ent.end_char)
+                candidate_texts = [
+                    self._format_candidate(c, self.kb) if hasattr(self, 'kb') else
+                    f"{c.entity_id}: {c.description}" if c.description else c.entity_id
+                    for c in candidates
+                ]
 
-            logger.debug(
-                f"Reranked {len(candidates)} to {len(ent._.candidates)} for '{ent.text}'"
-            )
+                # Embed all texts (already normalized by encode())
+                all_texts = [query_text] + candidate_texts
+                embeddings = self._embed_texts(all_texts, model)
+
+                # Compute cosine similarities
+                query_embedding = embeddings[0:1]
+                candidate_embeddings = embeddings[1:]
+                similarities = np.dot(candidate_embeddings, query_embedding.T).flatten()
+
+                # Sort by similarity and take top_k
+                scored_candidates = list(zip(candidates, similarities))
+                scored_candidates.sort(key=lambda x: x[1], reverse=True)
+                top_candidates = scored_candidates[:self.top_k]
+
+                # Update candidates with new scores
+                reranked = []
+                reranked_scores = []
+                for candidate, score in top_candidates:
+                    reranked.append(Candidate(
+                        entity_id=candidate.entity_id,
+                        score=float(score),
+                        description=candidate.description,
+                    ))
+                    reranked_scores.append(float(score))
+
+                ent._.candidates = reranked
+                ent._.candidate_scores = reranked_scores
+
+                logger.debug(
+                    f"Reranked {len(candidates)} to {len(ent._.candidates)} for '{ent.text}'"
+                )
+        finally:
+            # Release model - stays cached but can be evicted if memory needed
+            release_sentence_transformer(self.model_name, self.device)
 
         # Clear progress callback after processing
         self.progress_callback = None

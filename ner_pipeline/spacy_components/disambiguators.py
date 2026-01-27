@@ -31,7 +31,7 @@ from ner_pipeline.lela.prompts import (
     create_disambiguation_messages,
     DEFAULT_SYSTEM_PROMPT,
 )
-from ner_pipeline.lela.llm_pool import get_vllm_instance
+from ner_pipeline.lela.llm_pool import get_vllm_instance, release_vllm
 from ner_pipeline.utils import ensure_candidates_extension, ensure_resolved_entity_extension
 from ner_pipeline.types import Candidate, ProgressCallback
 
@@ -127,6 +127,9 @@ class LELATournamentDisambiguatorComponent:
     - Multiple rounds until single winner or all eliminated
     - "None of the candidates" option at index 0
     
+    Memory management: LLM is loaded on-demand and released after use,
+    allowing previous stage models to be evicted to free memory.
+    
     Reference: LELA paper Section 3.2
     """
 
@@ -146,6 +149,8 @@ class LELATournamentDisambiguatorComponent:
     ):
         self.nlp = nlp
         self.model_name = model_name
+        self.tensor_parallel_size = tensor_parallel_size
+        self.max_model_len = max_model_len
         self.batch_size = batch_size  # None = auto (sqrt of C)
         self.add_none_candidate = add_none_candidate
         self.add_descriptions = add_descriptions
@@ -156,18 +161,10 @@ class LELATournamentDisambiguatorComponent:
 
         _ensure_extensions()
 
-        # Get vLLM and SamplingParams
-        vllm, SamplingParams = _get_vllm()
-
-        # Get or create LLM instance
-        self.llm = get_vllm_instance(
-            model_name=model_name,
-            tensor_parallel_size=tensor_parallel_size,
-            max_model_len=max_model_len,
-        )
-
-        # Set up sampling parameters
-        self.sampling_params = SamplingParams(**self.generation_config)
+        # LLM loaded on-demand in __call__, not here
+        # This allows lazy eviction of previous stage models
+        self.llm = None
+        self.sampling_params = None
 
         self.kb = None
         self.progress_callback: Optional[ProgressCallback] = None
@@ -244,7 +241,7 @@ class LELATournamentDisambiguatorComponent:
         prompts = []
         tokenizer = self.llm.get_tokenizer()
         
-        for batch_idx, batch in enumerate(batches):
+        for batch in batches:
             messages = create_disambiguation_messages(
                 marked_text=marked_text,
                 candidates=batch,
@@ -260,39 +257,28 @@ class LELATournamentDisambiguatorComponent:
                 add_generation_prompt=True,
             )
             prompts.append(prompt)
-            logger.debug(f"Tournament batch {batch_idx + 1}/{len(batches)} prompt:\n{prompt}")
 
         # Run all batches in parallel via vLLM
-        import sys
-        import torch
         try:
-            logger.info(f"vLLM generate() called with {len(prompts)} prompts...")
-            sys.stderr.flush()
             responses = self.llm.generate(
                 prompts,
                 sampling_params=self.sampling_params,
                 use_tqdm=False,
             )
-            # Ensure GPU operations complete before continuing
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            logger.info(f"vLLM generate() returned {len(responses)} responses")
-            sys.stderr.flush()
         except Exception as e:
             logger.error(f"LLM generation error in tournament round: {e}")
             return []
 
         # Collect winners from each batch
         winners = []
-        for batch_idx, (batch, response) in enumerate(zip(batches, responses)):
+        for batch, response in zip(batches, responses):
             if response is None or not response.outputs:
                 continue
 
             raw_output = response.outputs[0].text
-            logger.debug(f"Tournament batch {batch_idx + 1}/{len(batches)} LLM output:\n{raw_output}")
             answer = self._parse_output(raw_output)
-
-            logger.debug(f"Tournament batch: {len(batch)} candidates, parsed answer={answer}")
+            
+            logger.debug(f"Tournament batch: {len(batch)} candidates, answer={answer}")
 
             # Answer 0 = "None" (no winner from this batch)
             if answer == 0:
@@ -368,6 +354,23 @@ class LELATournamentDisambiguatorComponent:
 
         return None
 
+    def _ensure_llm_loaded(self, progress_callback=None):
+        """Load LLM on-demand if not already loaded."""
+        if self.llm is None:
+            if progress_callback:
+                progress_callback(0.0, f"Loading LLM model ({self.model_name.split('/')[-1]})...")
+            
+            vllm, SamplingParams = _get_vllm()
+            self.llm = get_vllm_instance(
+                model_name=self.model_name,
+                tensor_parallel_size=self.tensor_parallel_size,
+                max_model_len=self.max_model_len,
+            )
+            self.sampling_params = SamplingParams(**self.generation_config)
+            
+            if progress_callback:
+                progress_callback(0.1, "LLM loaded, starting disambiguation...")
+
     def __call__(self, doc: Doc) -> Doc:
         """Disambiguate all entities in the document using tournament strategy."""
         if self.kb is None:
@@ -377,11 +380,21 @@ class LELATournamentDisambiguatorComponent:
         text = doc.text
         entities = list(doc.ents)
         num_entities = len(entities)
+        
+        if num_entities == 0:
+            return doc
+
+        # Load LLM on-demand (may evict unused models to free memory)
+        self._ensure_llm_loaded(self.progress_callback)
+
+        # Progress: 0.0-0.1 = model loading, 0.1-1.0 = processing entities
+        processing_start = 0.1
+        processing_range = 0.9
 
         for i, ent in enumerate(entities):
             ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-            base_progress = i / num_entities
-            entity_progress_range = 1.0 / num_entities
+            base_progress = processing_start + (i / num_entities) * processing_range
+            entity_progress_range = processing_range / num_entities
 
             def report_entity_progress(sub_progress: float, sub_desc: str):
                 if self.progress_callback and num_entities > 0:
@@ -427,12 +440,9 @@ class LELATournamentDisambiguatorComponent:
 
             report_entity_progress(1.0, "done")
 
-        import sys
-        logger.info("LELATournamentDisambiguatorComponent: clearing progress_callback...")
-        sys.stderr.flush()
+        # Release LLM - stays cached but can be evicted if memory needed
+        release_vllm(self.model_name, self.tensor_parallel_size)
         self.progress_callback = None
-        logger.info("=== LELATournamentDisambiguatorComponent.__call__ RETURNING ===")
-        sys.stderr.flush()
         return doc
 
 
@@ -489,6 +499,9 @@ class LELAvLLMDisambiguatorComponent:
     Uses vLLM for fast batched LLM inference to select the best entity.
     Sets span.kb_id_ to the selected entity ID and span._.resolved_entity
     to the full entity object.
+    
+    Memory management: LLM is loaded on-demand and released after use,
+    allowing previous stage models to be evicted to free memory.
     """
 
     def __init__(
@@ -506,28 +519,21 @@ class LELAvLLMDisambiguatorComponent:
     ):
         self.nlp = nlp
         self.model_name = model_name
+        self.tensor_parallel_size = tensor_parallel_size
+        self.max_model_len = max_model_len
         self.add_none_candidate = add_none_candidate
         self.add_descriptions = add_descriptions
         self.disable_thinking = disable_thinking
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.self_consistency_k = self_consistency_k
+        self.generation_config = generation_config or DEFAULT_GENERATION_CONFIG
 
         _ensure_extensions()
 
-        # Get vLLM and SamplingParams
-        vllm, SamplingParams = _get_vllm()
-
-        # Get or create LLM instance
-        self.llm = get_vllm_instance(
-            model_name=model_name,
-            tensor_parallel_size=tensor_parallel_size,
-            max_model_len=max_model_len,
-        )
-
-        # Set up sampling parameters
-        gen_config = generation_config or DEFAULT_GENERATION_CONFIG
-        sampling_config = {**gen_config, "n": self_consistency_k}
-        self.sampling_params = SamplingParams(**sampling_config)
+        # LLM loaded on-demand in __call__, not here
+        # This allows lazy eviction of previous stage models
+        self.llm = None
+        self.sampling_params = None
 
         # Initialize lazily
         self.kb = None
@@ -580,6 +586,24 @@ class LELAvLLMDisambiguatorComponent:
         """Mark mention in text with brackets."""
         return f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
 
+    def _ensure_llm_loaded(self, progress_callback=None):
+        """Load LLM on-demand if not already loaded."""
+        if self.llm is None:
+            if progress_callback:
+                progress_callback(0.0, f"Loading LLM model ({self.model_name.split('/')[-1]})...")
+            
+            vllm, SamplingParams = _get_vllm()
+            self.llm = get_vllm_instance(
+                model_name=self.model_name,
+                tensor_parallel_size=self.tensor_parallel_size,
+                max_model_len=self.max_model_len,
+            )
+            sampling_config = {**self.generation_config, "n": self.self_consistency_k}
+            self.sampling_params = SamplingParams(**sampling_config)
+            
+            if progress_callback:
+                progress_callback(0.1, "LLM loaded, starting disambiguation...")
+
     def __call__(self, doc: Doc) -> Doc:
         """Disambiguate all entities in the document."""
         if self.kb is None:
@@ -589,11 +613,21 @@ class LELAvLLMDisambiguatorComponent:
         text = doc.text
         entities = list(doc.ents)
         num_entities = len(entities)
+        
+        if num_entities == 0:
+            return doc
+
+        # Load LLM on-demand (may evict unused models to free memory)
+        self._ensure_llm_loaded(self.progress_callback)
+
+        # Progress: 0.0-0.1 = model loading, 0.1-1.0 = processing entities
+        processing_start = 0.1
+        processing_range = 0.9
 
         for i, ent in enumerate(entities):
             ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-            base_progress = i / num_entities
-            entity_progress_range = 1.0 / num_entities
+            base_progress = processing_start + (i / num_entities) * processing_range
+            entity_progress_range = processing_range / num_entities
             
             def report_entity_progress(sub_progress: float, sub_desc: str):
                 if self.progress_callback and num_entities > 0:
@@ -640,7 +674,7 @@ class LELAvLLMDisambiguatorComponent:
                     tokenize=False,
                     add_generation_prompt=True,
                 )
-                logger.debug(f"Formatted prompt for '{ent.text}':\n{prompt}")
+                logger.debug(f"Formatted prompt for '{ent.text}':\n{prompt[:500]}...")
 
                 responses = self.llm.generate(
                     [prompt],
@@ -685,6 +719,9 @@ class LELAvLLMDisambiguatorComponent:
             except Exception as e:
                 logger.error(f"Error processing LLM response: {e}")
                 continue
+        
+        # Release LLM - stays cached but can be evicted if memory needed
+        release_vllm(self.model_name, self.tensor_parallel_size)
         
         # Clear progress callback after processing
         self.progress_callback = None
@@ -867,7 +904,7 @@ class LELATransformersDisambiguatorComponent:
                     tokenize=False,
                     add_generation_prompt=True,
                 )
-                logger.debug(f"Formatted prompt for '{ent.text}':\n{prompt}")
+                logger.debug(f"Formatted prompt for '{ent.text}':\n{prompt[:500]}...")
 
                 inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
                 with torch.no_grad():

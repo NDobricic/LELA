@@ -21,7 +21,7 @@ from ner_pipeline.lela.config import (
     DEFAULT_EMBEDDER_MODEL,
     RETRIEVER_TASK,
 )
-from ner_pipeline.lela.llm_pool import get_sentence_transformer_instance
+from ner_pipeline.lela.llm_pool import get_sentence_transformer_instance, release_sentence_transformer
 from ner_pipeline.utils import ensure_candidates_extension
 from ner_pipeline.types import Candidate, ProgressCallback
 
@@ -277,6 +277,9 @@ class LELADenseCandidatesComponent:
 
     Uses SentenceTransformers and FAISS for nearest neighbor search.
     Candidates are stored in span._.candidates as List[Candidate].
+    
+    Memory management: Model is loaded on-demand and released after use,
+    allowing it to be evicted if memory is needed for later stages.
     """
 
     def __init__(
@@ -295,8 +298,8 @@ class LELADenseCandidatesComponent:
 
         ensure_candidates_extension()
 
-        # Load the embedding model
-        self.model = get_sentence_transformer_instance(model_name, device)
+        # Model loaded on-demand in __call__, not here
+        # This allows lazy eviction when memory is needed
 
         # Initialize lazily
         self.kb = None
@@ -326,8 +329,10 @@ class LELADenseCandidatesComponent:
 
         logger.info(f"Building dense index over {len(self.entities)} entities")
 
-        # Embed entities (already normalized by encode())
-        embeddings = self._embed_texts(entity_texts)
+        # Load model for embedding, then release after index is built
+        model = get_sentence_transformer_instance(self.model_name, self.device)
+        embeddings = model.encode(entity_texts, normalize_embeddings=True, convert_to_numpy=True)
+        release_sentence_transformer(self.model_name, self.device)
 
         # Build FAISS index
         dim = embeddings.shape[1]
@@ -336,9 +341,9 @@ class LELADenseCandidatesComponent:
 
         logger.info(f"Dense index built: {self.index.ntotal} vectors, dim={dim}")
 
-    def _embed_texts(self, texts: List[str]) -> np.ndarray:
+    def _embed_texts(self, texts: List[str], model) -> np.ndarray:
         """Embed texts using the SentenceTransformer model."""
-        return self.model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
+        return model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
 
     def _format_query(self, mention_text: str, context: Optional[str] = None) -> str:
         """Format query with task instruction."""
@@ -355,43 +360,64 @@ class LELADenseCandidatesComponent:
 
         entities = list(doc.ents)
         num_entities = len(entities)
+        
+        if num_entities == 0:
+            return doc
 
-        for i, ent in enumerate(entities):
-            # Report progress if callback is set
-            if self.progress_callback and num_entities > 0:
-                progress = i / num_entities
-                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
-            
-            # Build query
-            context = None
-            if self.use_context and hasattr(ent._, "context"):
-                context = ent._.context
-            query_text = self._format_query(ent.text, context)
+        # Report model loading
+        if self.progress_callback:
+            self.progress_callback(0.0, f"Loading embedding model ({self.model_name.split('/')[-1]})...")
 
-            # Embed query (already normalized by encode())
-            query_embedding = self._embed_texts([query_text])
+        # Load model for this stage (will reuse cached if available)
+        model = get_sentence_transformer_instance(self.model_name, self.device)
 
-            # Search
-            k = min(self.top_k, len(self.entities))
-            scores, indices = self.index.search(query_embedding, k)
+        if self.progress_callback:
+            self.progress_callback(0.1, "Model loaded, generating candidates...")
 
-            # Build candidates as List[Candidate] with entity ID
-            candidates = []
-            candidate_scores = []
-            for score, idx in zip(scores[0], indices[0]):
-                entity = self.entities[int(idx)]
-                score_val = float(score)
-                candidates.append(Candidate(
-                    entity_id=entity.id,
-                    score=score_val,
-                    description=entity.description,
-                ))
-                candidate_scores.append(score_val)
+        # Progress: 0.0-0.1 = model loading, 0.1-1.0 = processing entities
+        processing_start = 0.1
+        processing_range = 0.9
 
-            ent._.candidates = candidates
-            ent._.candidate_scores = candidate_scores
-            logger.debug(f"Dense-retrieved {len(candidates)} candidates for '{ent.text}'")
+        try:
+            for i, ent in enumerate(entities):
+                # Report progress if callback is set
+                if self.progress_callback and num_entities > 0:
+                    progress = processing_start + (i / num_entities) * processing_range
+                    ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                    self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
+                
+                # Build query
+                context = None
+                if self.use_context and hasattr(ent._, "context"):
+                    context = ent._.context
+                query_text = self._format_query(ent.text, context)
+
+                # Embed query (already normalized by encode())
+                query_embedding = self._embed_texts([query_text], model)
+
+                # Search
+                k = min(self.top_k, len(self.entities))
+                scores, indices = self.index.search(query_embedding, k)
+
+                # Build candidates as List[Candidate] with entity ID
+                candidates = []
+                candidate_scores = []
+                for score, idx in zip(scores[0], indices[0]):
+                    entity = self.entities[int(idx)]
+                    score_val = float(score)
+                    candidates.append(Candidate(
+                        entity_id=entity.id,
+                        score=score_val,
+                        description=entity.description,
+                    ))
+                    candidate_scores.append(score_val)
+
+                ent._.candidates = candidates
+                ent._.candidate_scores = candidate_scores
+                logger.debug(f"Dense-retrieved {len(candidates)} candidates for '{ent.text}'")
+        finally:
+            # Release model - stays cached but can be evicted if memory needed
+            release_sentence_transformer(self.model_name, self.device)
 
         # Clear progress callback after processing
         self.progress_callback = None

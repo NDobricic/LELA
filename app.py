@@ -15,6 +15,11 @@ import torch
 
 from ner_pipeline.config import PipelineConfig
 from ner_pipeline.pipeline import NERPipeline
+from ner_pipeline.memory import get_system_resources
+from ner_pipeline.lela.config import (
+    AVAILABLE_LLM_MODELS as LLM_MODEL_CHOICES,
+    AVAILABLE_EMBEDDING_MODELS as EMBEDDING_MODEL_CHOICES,
+)
 
 DESCRIPTION = """
 # NER Pipeline 🔗
@@ -494,11 +499,14 @@ def run_pipeline(
     gliner_threshold: float,
     simple_min_len: int,
     cand_type: str,
+    cand_embedding_model: str,
     cand_top_k: int,
     cand_use_context: bool,
     reranker_type: str,
+    reranker_embedding_model: str,
     reranker_top_k: int,
     disambig_type: str,
+    llm_model: str,
     tournament_batch_size: int,
     tournament_shuffle: bool,
     tournament_thinking: bool,
@@ -551,14 +559,20 @@ def run_pipeline(
     cand_params = {"top_k": cand_top_k}
     if cand_type in ("lela_bm25", "lela_dense"):
         cand_params["use_context"] = cand_use_context
+    if cand_type == "lela_dense":
+        cand_params["model_name"] = cand_embedding_model
 
     # Build reranker params
     reranker_params = {}
     if reranker_type != "none":
         reranker_params["top_k"] = reranker_top_k
+    if reranker_type == "lela_embedder":
+        reranker_params["model_name"] = reranker_embedding_model
 
     # Build disambiguator params
     disambig_params = {}
+    if disambig_type in ("lela_tournament", "lela_vllm", "lela_transformers"):
+        disambig_params["model_name"] = llm_model
     if disambig_type == "lela_tournament":
         # batch_size=0 means auto (sqrt of candidates)
         disambig_params["batch_size"] = tournament_batch_size if tournament_batch_size > 0 else None
@@ -683,13 +697,21 @@ def update_ner_params(ner_choice: str):
 def update_cand_params(cand_choice: str):
     """Show/hide candidate-specific parameters based on selection."""
     show_context = cand_choice in ("lela_bm25", "lela_dense")
-    return gr.update(visible=show_context)
+    show_embedding_model = cand_choice == "lela_dense"
+    return gr.update(visible=show_embedding_model), gr.update(visible=show_context)
+
+
+def update_reranker_params(reranker_choice: str):
+    """Show/hide reranker-specific parameters based on selection."""
+    show_embedding_model = reranker_choice == "lela_embedder"
+    return gr.update(visible=show_embedding_model)
 
 
 def update_disambig_params(disambig_choice: str):
     """Show/hide disambiguator-specific parameters based on selection."""
     show_tournament = disambig_choice == "lela_tournament"
-    return gr.update(visible=show_tournament)
+    show_llm_model = disambig_choice in ("lela_tournament", "lela_vllm", "lela_transformers")
+    return gr.update(visible=show_tournament), gr.update(visible=show_llm_model)
 
 
 def update_loader_from_file(file: Optional[gr.File]):
@@ -709,6 +731,37 @@ def update_loader_from_file(file: Optional[gr.File]):
     if ext in loader_map:
         return gr.update(value=loader_map[ext])
     return gr.update()
+
+
+def compute_memory_estimate(
+    ner_type: str,
+    gliner_model: str,
+    cand_type: str,
+    reranker_type: str,
+    disambig_type: str,
+    llm_model: str,
+) -> str:
+    """Compute and format memory estimate for current configuration."""
+    from ner_pipeline.lela.config import VLLM_GPU_MEMORY_UTILIZATION
+    
+    try:
+        resources = get_system_resources()
+
+        lines = []
+        if resources.gpu_available:
+            lines.append(f"**GPU:** {resources.gpu_name}")
+            lines.append(f"**VRAM:** {resources.gpu_vram_free_gb:.1f}GB free / {resources.gpu_vram_total_gb:.1f}GB total")
+            
+            # Show allocatable memory (considering vLLM's memory fraction)
+            allocatable = resources.gpu_vram_free_gb * VLLM_GPU_MEMORY_UTILIZATION
+            lines.append(f"**Allocatable:** ~{allocatable:.1f}GB ({VLLM_GPU_MEMORY_UTILIZATION*100:.0f}% of free)")
+        else:
+            lines.append("**GPU:** Not available")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"*Could not estimate memory: {e}*"
 
 
 def apply_confidence_filter(
@@ -885,6 +938,12 @@ if __name__ == "__main__":
 
                 # --- CONFIGURATION SECTION (Horizontal Layout) ---
                 gr.Markdown("### Configuration")
+                
+                # GPU memory info (left-aligned, above components)
+                memory_estimate_display = gr.Markdown(
+                    value="*Detecting GPU...*",
+                    elem_id="memory-estimate",
+                )
 
                 with gr.Row(equal_height=False, elem_classes=["config-row"]):
                     # NER Column
@@ -930,6 +989,14 @@ if __name__ == "__main__":
                             label="Generator",
                             container=False,
                         )
+                        # Embedding model selection for dense candidates
+                        embedding_model_choices = [(m[1], m[0]) for m in EMBEDDING_MODEL_CHOICES]
+                        cand_embedding_model = gr.Dropdown(
+                            choices=embedding_model_choices,
+                            value="Qwen/Qwen3-Embedding-4B",
+                            label="Embedding Model",
+                            visible=False,
+                        )
                         cand_top_k = gr.Slider(
                             minimum=1, maximum=100, value=64, step=1,
                             label="Top K",
@@ -949,6 +1016,13 @@ if __name__ == "__main__":
                             label="Reranker",
                             container=False,
                         )
+                        # Embedding model selection for embedder reranker
+                        reranker_embedding_model = gr.Dropdown(
+                            choices=embedding_model_choices,
+                            value="Qwen/Qwen3-Embedding-4B",
+                            label="Embedding Model",
+                            visible=False,
+                        )
                         reranker_top_k = gr.Slider(
                             minimum=1, maximum=20, value=10, step=1,
                             label="Top K",
@@ -962,6 +1036,14 @@ if __name__ == "__main__":
                             value="first",
                             label="Method",
                             container=False,
+                        )
+                        # LLM model selection for vLLM-based disambiguators
+                        llm_model_choices = [(m[1], m[0]) for m in LLM_MODEL_CHOICES]
+                        llm_model = gr.Dropdown(
+                            choices=llm_model_choices,
+                            value="Qwen/Qwen3-4B",
+                            label="LLM Model",
+                            visible=False,
                         )
                         with gr.Group(visible=False) as tournament_params:
                             tournament_batch_size = gr.Slider(
@@ -1129,13 +1211,36 @@ Test files are available in `data/test/`:
         cand_type.change(
             fn=update_cand_params,
             inputs=[cand_type],
-            outputs=[cand_use_context],
+            outputs=[cand_embedding_model, cand_use_context],
+        )
+
+        reranker_type.change(
+            fn=update_reranker_params,
+            inputs=[reranker_type],
+            outputs=[reranker_embedding_model],
         )
 
         disambig_type.change(
             fn=update_disambig_params,
             inputs=[disambig_type],
-            outputs=[tournament_params],
+            outputs=[tournament_params, llm_model],
+        )
+
+        # Memory estimate updates
+        memory_inputs = [ner_type, gliner_model, cand_type, reranker_type, disambig_type, llm_model]
+
+        for component in [ner_type, cand_type, reranker_type, disambig_type, llm_model]:
+            component.change(
+                fn=compute_memory_estimate,
+                inputs=memory_inputs,
+                outputs=[memory_estimate_display],
+            )
+
+        # Initial memory estimate on load
+        demo.load(
+            fn=compute_memory_estimate,
+            inputs=memory_inputs,
+            outputs=[memory_estimate_display],
         )
 
         run_btn.click(
@@ -1156,11 +1261,14 @@ Test files are available in `data/test/`:
                 gliner_threshold,
                 simple_min_len,
                 cand_type,
+                cand_embedding_model,
                 cand_top_k,
                 cand_use_context,
                 reranker_type,
+                reranker_embedding_model,
                 reranker_top_k,
                 disambig_type,
+                llm_model,
                 tournament_batch_size,
                 tournament_shuffle,
                 tournament_thinking,

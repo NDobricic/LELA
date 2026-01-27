@@ -10,6 +10,22 @@ DEFAULT_LLM_MODEL = "Qwen/Qwen3-4B"
 DEFAULT_EMBEDDER_MODEL = "Qwen/Qwen3-Embedding-4B"
 DEFAULT_RERANKER_MODEL = "tomaarsen/Qwen3-Reranker-4B-seq-cls"
 
+# Available LLM models for disambiguation (model_id, display_name, vram_gb)
+AVAILABLE_LLM_MODELS = [
+    ("Qwen/Qwen3-0.6B", "Qwen3-0.6B (~2GB VRAM)", 2.0),
+    ("Qwen/Qwen3-1.7B", "Qwen3-1.7B (~4GB VRAM)", 4.0),
+    ("Qwen/Qwen3-4B", "Qwen3-4B (~9GB VRAM)", 9.0),
+    ("Qwen/Qwen3-8B", "Qwen3-8B (~18GB VRAM)", 18.0),
+]
+
+# Available embedding models (model_id, display_name, vram_gb)
+AVAILABLE_EMBEDDING_MODELS = [
+    ("sentence-transformers/all-MiniLM-L6-v2", "MiniLM-L6 (~0.3GB)", 0.3),
+    ("BAAI/bge-base-en-v1.5", "BGE-Base (~0.5GB)", 0.5),
+    ("Qwen/Qwen3-Embedding-0.6B", "Qwen3-Embed-0.6B (~2GB)", 2.0),
+    ("Qwen/Qwen3-Embedding-4B", "Qwen3-Embed-4B (~9GB)", 9.0),
+]
+
 # Retrieval settings
 CANDIDATES_TOP_K = 64
 RERANKER_TOP_K = 10
@@ -24,6 +40,7 @@ NOT_AN_ENTITY = "None"
 # vLLM settings
 DEFAULT_TENSOR_PARALLEL_SIZE = 1
 DEFAULT_MAX_MODEL_LEN = None
+VLLM_GPU_MEMORY_UTILIZATION = 0.9  # Fraction of GPU memory vLLM will use
 
 # Embedding task descriptions
 RETRIEVER_TASK = (
