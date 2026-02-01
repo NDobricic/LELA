@@ -23,7 +23,10 @@ from ner_pipeline.lela.config import (
     DEFAULT_EMBEDDER_MODEL,
     RETRIEVER_TASK,
 )
-from ner_pipeline.lela.llm_pool import get_sentence_transformer_instance, release_sentence_transformer
+from ner_pipeline.lela.llm_pool import (
+    get_sentence_transformer_instance,
+    release_sentence_transformer,
+)
 from ner_pipeline.utils import ensure_candidates_extension
 from ner_pipeline.types import Candidate, ProgressCallback
 
@@ -41,6 +44,7 @@ def _get_bm25s():
     if _bm25s is None:
         try:
             import bm25s
+
             _bm25s = bm25s
         except ImportError:
             raise ImportError(
@@ -56,6 +60,7 @@ def _get_stemmer():
     if _Stemmer is None:
         try:
             import Stemmer
+
             _Stemmer = Stemmer
         except ImportError:
             raise ImportError(
@@ -71,6 +76,7 @@ def _get_faiss():
     if _faiss is None:
         try:
             import faiss
+
             _faiss = faiss
         except ImportError:
             raise ImportError(
@@ -83,6 +89,7 @@ def _get_faiss():
 # ============================================================================
 # LELA BM25 Candidates Component
 # ============================================================================
+
 
 @Language.factory(
     "ner_pipeline_lela_bm25_candidates",
@@ -195,8 +202,10 @@ class LELABM25CandidatesComponent:
             if self.progress_callback and num_entities > 0:
                 progress = i / num_entities
                 ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
-            
+                self.progress_callback(
+                    progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}"
+                )
+
             # Build query
             if self.use_context and hasattr(ent._, "context") and ent._.context:
                 query_text = f"{ent.text} {ent._.context}"
@@ -218,18 +227,24 @@ class LELABM25CandidatesComponent:
             k = min(self.top_k, len(self.entities))
             results = self.retriever.retrieve(query_tokens, k=k)
             candidates_docs = results.documents[0]
-            scores = results.scores[0] if hasattr(results, 'scores') else [0.0] * len(candidates_docs)
+            scores = (
+                results.scores[0]
+                if hasattr(results, "scores")
+                else [0.0] * len(candidates_docs)
+            )
 
             # Store as List[Candidate] with entity ID for proper resolution
             candidates = []
             candidate_scores = []
             for j, record in enumerate(candidates_docs):
                 score = float(scores[j]) if j < len(scores) else 0.0
-                candidates.append(Candidate(
-                    entity_id=record["id"],
-                    score=score,
-                    description=record["description"],
-                ))
+                candidates.append(
+                    Candidate(
+                        entity_id=record["id"],
+                        score=score,
+                        description=record["description"],
+                    )
+                )
                 candidate_scores.append(score)
 
             ent._.candidates = candidates
@@ -238,13 +253,14 @@ class LELABM25CandidatesComponent:
 
         # Clear progress callback after processing
         self.progress_callback = None
-        
+
         return doc
 
 
 # ============================================================================
 # LELA Dense Candidates Component
 # ============================================================================
+
 
 @Language.factory(
     "ner_pipeline_lela_dense_candidates",
@@ -253,7 +269,7 @@ class LELABM25CandidatesComponent:
         "top_k": CANDIDATES_TOP_K,
         "device": None,
         "use_context": True,
-        "cache_dir": None, # Add cache_dir to default_config
+        "cache_dir": None,  # Add cache_dir to default_config
     },
 )
 def create_lela_dense_candidates_component(
@@ -263,7 +279,7 @@ def create_lela_dense_candidates_component(
     top_k: int,
     device: Optional[str],
     use_context: bool,
-    cache_dir: Optional[str], # Add cache_dir to factory signature
+    cache_dir: Optional[str],  # Add cache_dir to factory signature
 ):
     """Factory for LELA dense candidates component."""
     return LELADenseCandidatesComponent(
@@ -272,12 +288,13 @@ def create_lela_dense_candidates_component(
         top_k=top_k,
         device=device,
         use_context=use_context,
-        cache_dir=cache_dir, # Pass cache_dir to component
+        cache_dir=cache_dir,  # Pass cache_dir to component
     )
 
 
 import hashlib
 from pathlib import Path
+
 # ... (rest of imports)
 
 
@@ -287,7 +304,7 @@ class LELADenseCandidatesComponent:
 
     Uses SentenceTransformers and FAISS for nearest neighbor search.
     Candidates are stored in span._.candidates as List[Candidate].
-    
+
     Memory management: Model is loaded on-demand and released after use,
     allowing it to be evicted if memory is needed for later stages.
     """
@@ -299,7 +316,7 @@ class LELADenseCandidatesComponent:
         top_k: int = CANDIDATES_TOP_K,
         device: Optional[str] = None,
         use_context: bool = True,
-        cache_dir: Optional[str] = None, # Accept cache_dir in init
+        cache_dir: Optional[str] = None,  # Accept cache_dir in init
     ):
         self.nlp = nlp
         self.model_name = model_name
@@ -321,13 +338,22 @@ class LELADenseCandidatesComponent:
 
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
-    
+
     def _get_cache_path(self, kb_path: str) -> Path:
         """Generate a unique cache path for the FAISS index."""
         kb_hash = hashlib.sha256(kb_path.encode()).hexdigest()[:16]
         model_hash = hashlib.sha256(self.model_name.encode()).hexdigest()[:16]
         device_hash = hashlib.sha256(str(self.device).encode()).hexdigest()[:8]
-        
+
+        index_name = f"faiss_index_{kb_hash}_{model_hash}_{device_hash}.faiss"
+        return self.cache_dir / index_name
+
+    def _get_cache_path(self, kb_path: str) -> Path:
+        """Generate a unique cache path for the FAISS index."""
+        kb_hash = hashlib.sha256(kb_path.encode()).hexdigest()[:16]
+        model_hash = hashlib.sha256(self.model_name.encode()).hexdigest()[:16]
+        device_hash = hashlib.sha256(str(self.device).encode()).hexdigest()[:8]
+
         index_name = f"faiss_index_{kb_hash}_{model_hash}_{device_hash}.faiss"
         return self.cache_dir / index_name
 
@@ -346,7 +372,7 @@ class LELADenseCandidatesComponent:
 
         # Ensure cache directory exists
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_path = self._get_cache_path(kb.path) # Assuming KB has a 'path' attribute
+        cache_path = self._get_cache_path(kb.path)  # Assuming KB has a 'path' attribute
 
         if cache_path.exists():
             logger.info(f"Loading FAISS index from cache: {cache_path}")
@@ -354,15 +380,15 @@ class LELADenseCandidatesComponent:
             logger.info(f"FAISS index loaded from cache: {self.index.ntotal} vectors")
         else:
             # Build entity texts
-            entity_texts = [
-                f"{e.title} {e.description or ''}" for e in self.entities
-            ]
+            entity_texts = [f"{e.title} {e.description or ''}" for e in self.entities]
 
             logger.info(f"Building dense index over {len(self.entities)} entities")
 
             # Load model for embedding, then release after index is built
             model = get_sentence_transformer_instance(self.model_name, self.device)
-            embeddings = model.encode(entity_texts, normalize_embeddings=True, convert_to_numpy=True)
+            embeddings = model.encode(
+                entity_texts, normalize_embeddings=True, convert_to_numpy=True
+            )
             release_sentence_transformer(self.model_name, self.device)
 
             # Build FAISS index
@@ -370,59 +396,9 @@ class LELADenseCandidatesComponent:
             self.index = faiss.IndexFlatIP(dim)
             self.index.add(embeddings)
 
-            logger.info(f"Dense index built: {self.index.ntotal} vectors, dim={dim}. Saving to {cache_path}")
-            faiss.write_index(self.index, str(cache_path))
-            logger.info("FAISS index saved to cache.")
-    
-    def _get_cache_path(self, kb_path: str) -> Path:
-        """Generate a unique cache path for the FAISS index."""
-        kb_hash = hashlib.sha256(kb_path.encode()).hexdigest()[:16]
-        model_hash = hashlib.sha256(self.model_name.encode()).hexdigest()[:16]
-        device_hash = hashlib.sha256(str(self.device).encode()).hexdigest()[:8]
-        
-        index_name = f"faiss_index_{kb_hash}_{model_hash}_{device_hash}.faiss"
-        return self.cache_dir / index_name
-
-    def initialize(self, kb: KnowledgeBase):
-        """Initialize the component with a knowledge base."""
-        if kb is None:
-            raise ValueError("LELA dense retrieval requires a knowledge base.")
-
-        self.kb = kb
-
-        faiss = _get_faiss()
-
-        self.entities = list(kb.all_entities())
-        if not self.entities:
-            raise ValueError("Knowledge base is empty.")
-
-        # Ensure cache directory exists
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_path = self._get_cache_path(kb.path) # Assuming KB has a 'path' attribute
-
-        if cache_path.exists():
-            logger.info(f"Loading FAISS index from cache: {cache_path}")
-            self.index = faiss.read_index(str(cache_path))
-            logger.info(f"FAISS index loaded from cache: {self.index.ntotal} vectors")
-        else:
-            # Build entity texts
-            entity_texts = [
-                f"{e.title} {e.description or ''}" for e in self.entities
-            ]
-
-            logger.info(f"Building dense index over {len(self.entities)} entities")
-
-            # Load model for embedding, then release after index is built
-            model = get_sentence_transformer_instance(self.model_name, self.device)
-            embeddings = model.encode(entity_texts, normalize_embeddings=True, convert_to_numpy=True)
-            release_sentence_transformer(self.model_name, self.device)
-
-            # Build FAISS index
-            dim = embeddings.shape[1]
-            self.index = faiss.IndexFlatIP(dim)
-            self.index.add(embeddings)
-
-            logger.info(f"Dense index built: {self.index.ntotal} vectors, dim={dim}. Saving to {cache_path}")
+            logger.info(
+                f"Dense index built: {self.index.ntotal} vectors, dim={dim}. Saving to {cache_path}"
+            )
             faiss.write_index(self.index, str(cache_path))
             logger.info("FAISS index saved to cache.")
 
@@ -440,18 +416,22 @@ class LELADenseCandidatesComponent:
     def __call__(self, doc: Doc) -> Doc:
         """Generate candidates for all entities in the document."""
         if self.index is None:
-            logger.warning("Dense component not initialized - call initialize(kb) first")
+            logger.warning(
+                "Dense component not initialized - call initialize(kb) first"
+            )
             return doc
 
         entities = list(doc.ents)
         num_entities = len(entities)
-        
+
         if num_entities == 0:
             return doc
 
         # Report model loading
         if self.progress_callback:
-            self.progress_callback(0.0, f"Loading embedding model ({self.model_name.split('/')[-1]})...")
+            self.progress_callback(
+                0.0, f"Loading embedding model ({self.model_name.split('/')[-1]})..."
+            )
 
         # Load model for this stage (will reuse cached if available)
         model = get_sentence_transformer_instance(self.model_name, self.device)
@@ -469,8 +449,11 @@ class LELADenseCandidatesComponent:
                 if self.progress_callback and num_entities > 0:
                     progress = processing_start + (i / num_entities) * processing_range
                     ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                    self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
-                
+                    self.progress_callback(
+                        progress,
+                        f"Generating candidates {i+1}/{num_entities}: {ent_text}",
+                    )
+
                 # Build query
                 context = None
                 if self.use_context and hasattr(ent._, "context"):
@@ -490,29 +473,34 @@ class LELADenseCandidatesComponent:
                 for score, idx in zip(scores[0], indices[0]):
                     entity = self.entities[int(idx)]
                     score_val = float(score)
-                    candidates.append(Candidate(
-                        entity_id=entity.id,
-                        score=score_val,
-                        description=entity.description,
-                    ))
+                    candidates.append(
+                        Candidate(
+                            entity_id=entity.id,
+                            score=score_val,
+                            description=entity.description,
+                        )
+                    )
                     candidate_scores.append(score_val)
 
                 ent._.candidates = candidates
                 ent._.candidate_scores = candidate_scores
-                logger.debug(f"Dense-retrieved {len(candidates)} candidates for '{ent.text}'")
+                logger.debug(
+                    f"Dense-retrieved {len(candidates)} candidates for '{ent.text}'"
+                )
         finally:
             # Release model - stays cached but can be evicted if memory needed
             release_sentence_transformer(self.model_name, self.device)
 
         # Clear progress callback after processing
         self.progress_callback = None
-        
+
         return doc
 
 
 # ============================================================================
 # Fuzzy Candidates Component
 # ============================================================================
+
 
 @Language.factory(
     "ner_pipeline_fuzzy_candidates",
@@ -550,7 +538,7 @@ class FuzzyCandidatesComponent:
         self.kb = None
         self.entities = None
         self.titles = None
-        
+
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
@@ -568,7 +556,9 @@ class FuzzyCandidatesComponent:
     def __call__(self, doc: Doc) -> Doc:
         """Generate candidates for all entities in the document."""
         if self.entities is None:
-            logger.warning("Fuzzy component not initialized - call initialize(kb) first")
+            logger.warning(
+                "Fuzzy component not initialized - call initialize(kb) first"
+            )
             return doc
 
         from rapidfuzz import process
@@ -581,8 +571,10 @@ class FuzzyCandidatesComponent:
             if self.progress_callback and num_entities > 0:
                 progress = i / num_entities
                 ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
-            
+                self.progress_callback(
+                    progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}"
+                )
+
             results = process.extract(ent.text, self.titles, limit=self.top_k)
 
             # Build candidates as List[Candidate] with entity ID
@@ -592,11 +584,13 @@ class FuzzyCandidatesComponent:
                 entity = self.entities[idx]
                 # Normalize fuzzy score from 0-100 to 0-1
                 score_val = float(score) / 100.0
-                candidates.append(Candidate(
-                    entity_id=entity.id,
-                    score=score_val,
-                    description=entity.description,
-                ))
+                candidates.append(
+                    Candidate(
+                        entity_id=entity.id,
+                        score=score_val,
+                        description=entity.description,
+                    )
+                )
                 candidate_scores.append(score_val)
 
             ent._.candidates = candidates
@@ -605,13 +599,14 @@ class FuzzyCandidatesComponent:
 
         # Clear progress callback after processing
         self.progress_callback = None
-        
+
         return doc
 
 
 # ============================================================================
 # Standard BM25 Candidates Component (using rank-bm25)
 # ============================================================================
+
 
 @Language.factory(
     "ner_pipeline_bm25_candidates",
@@ -650,7 +645,7 @@ class BM25CandidatesComponent:
         self.entities = None
         self.bm25 = None
         self.corpus = None
-        
+
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
@@ -693,13 +688,15 @@ class BM25CandidatesComponent:
             if self.progress_callback and num_entities > 0:
                 progress = i / num_entities
                 ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
-            
+                self.progress_callback(
+                    progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}"
+                )
+
             query_tokens = ent.text.lower().split()
             scores = self.bm25.get_scores(query_tokens)
 
             # Get top-k indices
-            top_indices = np.argsort(scores)[::-1][:self.top_k]
+            top_indices = np.argsort(scores)[::-1][: self.top_k]
 
             # Build candidates as List[Candidate] with entity ID
             candidates = []
@@ -707,18 +704,22 @@ class BM25CandidatesComponent:
             for idx in top_indices:
                 entity = self.entities[idx]
                 score_val = float(scores[idx])
-                candidates.append(Candidate(
-                    entity_id=entity.id,
-                    score=score_val,
-                    description=entity.description,
-                ))
+                candidates.append(
+                    Candidate(
+                        entity_id=entity.id,
+                        score=score_val,
+                        description=entity.description,
+                    )
+                )
                 candidate_scores.append(score_val)
 
             ent._.candidates = candidates
             ent._.candidate_scores = candidate_scores
-            logger.debug(f"BM25 retrieved {len(candidates)} candidates for '{ent.text}'")
+            logger.debug(
+                f"BM25 retrieved {len(candidates)} candidates for '{ent.text}'"
+            )
 
         # Clear progress callback after processing
         self.progress_callback = None
-        
+
         return doc
