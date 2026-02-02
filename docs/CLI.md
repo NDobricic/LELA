@@ -100,7 +100,6 @@ The configuration names map to spaCy component factories:
 | **Candidate Generators** | | |
 | `fuzzy` | `el_pipeline_fuzzy_candidates` | RapidFuzz matching |
 | `bm25` | `el_pipeline_bm25_candidates` | rank-bm25 retrieval |
-| `lela_bm25` | `el_pipeline_lela_bm25_candidates` | bm25s retrieval |
 | `lela_dense` | `el_pipeline_lela_dense_candidates` | Dense retrieval |
 | **Rerankers** | | |
 | `none` | `el_pipeline_noop_reranker` | No reranking |
@@ -162,7 +161,7 @@ The configuration names map to spaCy component factories:
     }
   },
   "candidate_generator": {
-    "name": "lela_bm25",
+    "name": "bm25",
     "params": {"top_k": 64, "use_context": true}
   },
   "reranker": {

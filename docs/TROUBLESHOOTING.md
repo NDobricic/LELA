@@ -260,7 +260,7 @@ Alternatively, use the `lela_transformers` disambiguator which uses HuggingFace 
    ```json
    {
      "candidate_generator": {
-       "name": "lela_bm25",
+       "name": "bm25",
        "params": {"top_k": 32}  // Instead of 64
      },
      "reranker": {

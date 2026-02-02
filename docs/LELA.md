@@ -75,7 +75,7 @@ Output: [Paris (city), Paris (novel), Paris (Texas), Paris Hilton, ...]
 ```
 
 LELA is retriever-agnostic and supports:
-- BM25 (keyword-based) → `el_pipeline_lela_bm25_candidates`
+- BM25 (keyword-based) → `el_pipeline_bm25_candidates`
 - Dense retrieval (semantic embeddings) → `el_pipeline_lela_dense_candidates`
 - Fuzzy matching (string similarity) → `el_pipeline_fuzzy_candidates`
 
@@ -174,37 +174,6 @@ nlp.add_pipe("el_pipeline_lela_gliner", config={
 ```
 
 ### LELA Candidate Generation
-
-#### `el_pipeline_lela_bm25_candidates`
-
-Fast BM25 retrieval using bm25s library with stemming.
-
-**Features:**
-- Numba-accelerated BM25
-- Language-specific stemming (PyStemmer)
-- Context integration
-
-**spaCy Usage:**
-```python
-cand = nlp.add_pipe("el_pipeline_lela_bm25_candidates", config={
-    "top_k": 64,
-    "use_context": True,
-    "stemmer_language": "english"
-})
-cand.initialize(kb)
-```
-
-**JSON Config:**
-```json
-{
-  "name": "lela_bm25",
-  "params": {
-    "top_k": 64,
-    "use_context": true,
-    "stemmer_language": "english"
-  }
-}
-```
 
 #### `el_pipeline_lela_dense_candidates`
 
@@ -417,7 +386,7 @@ LELA-format JSONL knowledge base where title serves as ID.
     }
   },
   "candidate_generator": {
-    "name": "lela_bm25",
+    "name": "bm25",
     "params": {
       "top_k": 64,
       "use_context": true,
@@ -461,7 +430,7 @@ For faster processing without GPU requirements:
     "params": {"threshold": 0.5}
   },
   "candidate_generator": {
-    "name": "lela_bm25",
+    "name": "bm25",
     "params": {"top_k": 10}
   },
   "reranker": {"name": "none"},
@@ -588,7 +557,7 @@ import json
 config_dict = {
     "loader": {"name": "text"},
     "ner": {"name": "lela_gliner", "params": {"threshold": 0.5}},
-    "candidate_generator": {"name": "lela_bm25", "params": {"top_k": 64}},
+    "candidate_generator": {"name": "bm25", "params": {"top_k": 64}},
     "reranker": {"name": "none"},
     "disambiguator": {"name": "first"},
     "knowledge_base": {"name": "lela_jsonl", "params": {"path": "kb.jsonl"}}
@@ -618,7 +587,7 @@ nlp.add_pipe("el_pipeline_lela_gliner", config={
 })
 
 # Add BM25 candidates
-cand = nlp.add_pipe("el_pipeline_lela_bm25_candidates", config={
+cand = nlp.add_pipe("el_pipeline_bm25_candidates", config={
     "top_k": 64,
     "use_context": True
 })
@@ -657,7 +626,7 @@ python -m el_pipeline.cli \
 
 1. Start the web app: `python app.py`
 2. Select "lela_gliner" for NER
-3. Select "lela_bm25" or "lela_dense" for candidate generation
+3. Select "bm25" or "lela_dense" for candidate generation
 4. Optionally enable "lela_embedder" reranker
 5. Select "lela_vllm" for disambiguation
 6. Upload your knowledge base and documents
@@ -669,7 +638,6 @@ python -m el_pipeline.cli \
 | Component | GPU Recommended | Notes |
 |-----------|-----------------|-------|
 | lela_gliner | Yes | GLiNER model inference |
-| lela_bm25 | No | CPU-based BM25 |
 | lela_dense | Yes | Embedding computation |
 | lela_embedder | Yes | Embedding computation |
 | lela_vllm | Yes (Required) | LLM inference |

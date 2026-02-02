@@ -2,7 +2,6 @@
 spaCy candidate generation components for the EL pipeline.
 
 Provides factories and components for candidate generation:
-- LELABM25CandidatesComponent: BM25 using bm25s library
 - LELADenseCandidatesComponent: Dense retrieval using embeddings + FAISS
 - FuzzyCandidatesComponent: RapidFuzz string matching
 - BM25CandidatesComponent: Standard rank-bm25 based
@@ -38,20 +37,20 @@ _Stemmer = None
 _faiss = None
 
 
-def _get_bm25s():
-    """Lazy import of bm25s."""
-    global _bm25s
-    if _bm25s is None:
-        try:
-            import bm25s
-
-            _bm25s = bm25s
-        except ImportError:
-            raise ImportError(
-                "bm25s package required for BM25 candidates. "
-                "Install with: pip install 'bm25s[full]'"
-            )
-    return _bm25s
+# def _get_bm25s():
+#     """Lazy import of bm25s."""
+#     global _bm25s
+#     if _bm25s is None:
+#         try:
+#             import bm25s
+#
+#             _bm25s = bm25s
+#         except ImportError:
+#             raise ImportError(
+#                 "bm25s package required for BM25 candidates. "
+#                 "Install with: pip install 'bm25s[full]'"
+#             )
+#     return _bm25s
 
 
 def _get_stemmer():
@@ -91,170 +90,170 @@ def _get_faiss():
 # ============================================================================
 
 
-@Language.factory(
-    "el_pipeline_lela_bm25_candidates",
-    default_config={
-        "top_k": CANDIDATES_TOP_K,
-        "use_context": True,
-        "stemmer_language": "english",
-    },
-)
-def create_lela_bm25_candidates_component(
-    nlp: Language,
-    name: str,
-    top_k: int,
-    use_context: bool,
-    stemmer_language: str,
-):
-    """Factory for LELA BM25 candidates component."""
-    return LELABM25CandidatesComponent(
-        nlp=nlp,
-        top_k=top_k,
-        use_context=use_context,
-        stemmer_language=stemmer_language,
-    )
-
-
-class LELABM25CandidatesComponent:
-    """
-    BM25 candidate generation component for spaCy.
-
-    Uses bm25s library with Stemmer for efficient BM25 retrieval.
-    Candidates are stored in span._.candidates as List[Candidate].
-    """
-
-    def __init__(
-        self,
-        nlp: Language,
-        top_k: int = CANDIDATES_TOP_K,
-        use_context: bool = True,
-        stemmer_language: str = "english",
-    ):
-        self.nlp = nlp
-        self.top_k = top_k
-        self.use_context = use_context
-        self.stemmer_language = stemmer_language
-
-        ensure_candidates_extension()
-
-        # Initialize lazily - will be built when KB is set
-        self.kb = None
-        self.entities = None
-        self.corpus_records = None
-        self.retriever = None
-        self.stemmer = None
-        self.tokenizer = None
-
-        # Optional progress callback for fine-grained progress reporting
-        self.progress_callback: Optional[ProgressCallback] = None
-
-    def initialize(self, kb: KnowledgeBase):
-        """Initialize the component with a knowledge base."""
-        if kb is None:
-            raise ValueError("LELA BM25 requires a knowledge base.")
-
-        self.kb = kb
-
-        bm25s = _get_bm25s()
-        Stemmer = _get_stemmer()
-
-        self.entities = list(kb.all_entities())
-        if not self.entities:
-            raise ValueError("Knowledge base is empty.")
-
-        # Build corpus - include entity ID for proper resolution
-        self.corpus_records = []
-        corpus_texts = []
-        for entity in self.entities:
-            record = {
-                "id": entity.id,
-                "title": entity.title,
-                "description": entity.description or "",
-            }
-            self.corpus_records.append(record)
-            corpus_texts.append(f"{entity.title} {entity.description or ''}")
-
-        logger.info(f"Building BM25 index over {len(corpus_texts)} entities")
-
-        # Create stemmer and tokenize
-        self.stemmer = Stemmer.Stemmer(self.stemmer_language)
-        self.tokenizer = bm25s.tokenization.Tokenizer(stemmer=self.stemmer)
-        corpus_tokens = self.tokenizer.tokenize(corpus_texts, return_as="tuple")
-
-        # Build index
-        self.retriever = bm25s.BM25(corpus=self.corpus_records, backend="numba")
-        self.retriever.index(corpus_tokens)
-
-        logger.info("BM25 index built successfully")
-
-    def __call__(self, doc: Doc) -> Doc:
-        """Generate candidates for all entities in the document."""
-        if self.retriever is None:
-            logger.warning("BM25 component not initialized - call initialize(kb) first")
-            return doc
-
-        bm25s = _get_bm25s()
-        entities = list(doc.ents)
-        num_entities = len(entities)
-
-        for i, ent in enumerate(entities):
-            # Report progress if callback is set
-            if self.progress_callback and num_entities > 0:
-                progress = i / num_entities
-                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                self.progress_callback(
-                    progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}"
-                )
-
-            # Build query
-            if self.use_context and hasattr(ent._, "context") and ent._.context:
-                query_text = f"{ent.text} {ent._.context}"
-            else:
-                query_text = ent.text
-
-            # Tokenize query
-            query_tokens = bm25s.tokenize(
-                [query_text],
-                stemmer=self.stemmer,
-                return_ids=False,
-            )
-
-            if not query_tokens[0]:
-                ent._.candidates = []
-                continue
-
-            # Retrieve
-            k = min(self.top_k, len(self.entities))
-            results = self.retriever.retrieve(query_tokens, k=k)
-            candidates_docs = results.documents[0]
-            scores = (
-                results.scores[0]
-                if hasattr(results, "scores")
-                else [0.0] * len(candidates_docs)
-            )
-
-            # Store as List[Candidate] with entity ID for proper resolution
-            candidates = []
-            candidate_scores = []
-            for j, record in enumerate(candidates_docs):
-                score = float(scores[j]) if j < len(scores) else 0.0
-                candidates.append(
-                    Candidate(
-                        entity_id=record["id"],
-                        score=score,
-                        description=record["description"],
-                    )
-                )
-                candidate_scores.append(score)
-
-            ent._.candidates = candidates
-            ent._.candidate_scores = candidate_scores
-            logger.debug(f"Retrieved {len(candidates)} candidates for '{ent.text}'")
-
-        # Clear progress callback after processing
-        self.progress_callback = None
-
-        return doc
+# @Language.factory(
+#     "el_pipeline_lela_bm25_candidates",
+#     default_config={
+#         "top_k": CANDIDATES_TOP_K,
+#         "use_context": True,
+#         "stemmer_language": "english",
+#     },
+# )
+# def create_lela_bm25_candidates_component(
+#     nlp: Language,
+#     name: str,
+#     top_k: int,
+#     use_context: bool,
+#     stemmer_language: str,
+# ):
+#     """Factory for LELA BM25 candidates component."""
+#     return LELABM25CandidatesComponent(
+#         nlp=nlp,
+#         top_k=top_k,
+#         use_context=use_context,
+#         stemmer_language=stemmer_language,
+#     )
+#
+#
+# class LELABM25CandidatesComponent:
+#     """
+#     BM25 candidate generation component for spaCy.
+#
+#     Uses bm25s library with Stemmer for efficient BM25 retrieval.
+#     Candidates are stored in span._.candidates as List[Candidate].
+#     """
+#
+#     def __init__(
+#         self,
+#         nlp: Language,
+#         top_k: int = CANDIDATES_TOP_K,
+#         use_context: bool = True,
+#         stemmer_language: str = "english",
+#     ):
+#         self.nlp = nlp
+#         self.top_k = top_k
+#         self.use_context = use_context
+#         self.stemmer_language = stemmer_language
+#
+#         ensure_candidates_extension()
+#
+#         # Initialize lazily - will be built when KB is set
+#         self.kb = None
+#         self.entities = None
+#         self.corpus_records = None
+#         self.retriever = None
+#         self.stemmer = None
+#         self.tokenizer = None
+#
+#         # Optional progress callback for fine-grained progress reporting
+#         self.progress_callback: Optional[ProgressCallback] = None
+#
+#     def initialize(self, kb: KnowledgeBase):
+#         """Initialize the component with a knowledge base."""
+#         if kb is None:
+#             raise ValueError("LELA BM25 requires a knowledge base.")
+#
+#         self.kb = kb
+#
+#         bm25s = _get_bm25s()
+#         Stemmer = _get_stemmer()
+#
+#         self.entities = list(kb.all_entities())
+#         if not self.entities:
+#             raise ValueError("Knowledge base is empty.")
+#
+#         # Build corpus - include entity ID for proper resolution
+#         self.corpus_records = []
+#         corpus_texts = []
+#         for entity in self.entities:
+#             record = {
+#                 "id": entity.id,
+#                 "title": entity.title,
+#                 "description": entity.description or "",
+#             }
+#             self.corpus_records.append(record)
+#             corpus_texts.append(f"{entity.title} {entity.description or ''}")
+#
+#         logger.info(f"Building BM25 index over {len(corpus_texts)} entities")
+#
+#         # Create stemmer and tokenize
+#         self.stemmer = Stemmer.Stemmer(self.stemmer_language)
+#         self.tokenizer = bm25s.tokenization.Tokenizer(stemmer=self.stemmer)
+#         corpus_tokens = self.tokenizer.tokenize(corpus_texts, return_as="tuple")
+#
+#         # Build index
+#         self.retriever = bm25s.BM25(corpus=self.corpus_records, backend="numba")
+#         self.retriever.index(corpus_tokens)
+#
+#         logger.info("BM25 index built successfully")
+#
+#     def __call__(self, doc: Doc) -> Doc:
+#         """Generate candidates for all entities in the document."""
+#         if self.retriever is None:
+#             logger.warning("BM25 component not initialized - call initialize(kb) first")
+#             return doc
+#
+#         bm25s = _get_bm25s()
+#         entities = list(doc.ents)
+#         num_entities = len(entities)
+#
+#         for i, ent in enumerate(entities):
+#             # Report progress if callback is set
+#             if self.progress_callback and num_entities > 0:
+#                 progress = i / num_entities
+#                 ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+#                 self.progress_callback(
+#                     progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}"
+#                 )
+#
+#             # Build query
+#             if self.use_context and hasattr(ent._, "context") and ent._.context:
+#                 query_text = f"{ent.text} {ent._.context}"
+#             else:
+#                 query_text = ent.text
+#
+#             # Tokenize query
+#             query_tokens = bm25s.tokenize(
+#                 [query_text],
+#                 stemmer=self.stemmer,
+#                 return_ids=False,
+#             )
+#
+#             if not query_tokens[0]:
+#                 ent._.candidates = []
+#                 continue
+#
+#             # Retrieve
+#             k = min(self.top_k, len(self.entities))
+#             results = self.retriever.retrieve(query_tokens, k=k)
+#             candidates_docs = results.documents[0]
+#             scores = (
+#                 results.scores[0]
+#                 if hasattr(results, "scores")
+#                 else [0.0] * len(candidates_docs)
+#             )
+#
+#             # Store as List[Candidate] with entity ID for proper resolution
+#             candidates = []
+#             candidate_scores = []
+#             for j, record in enumerate(candidates_docs):
+#                 score = float(scores[j]) if j < len(scores) else 0.0
+#                 candidates.append(
+#                     Candidate(
+#                         entity_id=record["id"],
+#                         score=score,
+#                         description=record["description"],
+#                     )
+#                 )
+#                 candidate_scores.append(score)
+#
+#             ent._.candidates = candidates
+#             ent._.candidate_scores = candidate_scores
+#             logger.debug(f"Retrieved {len(candidates)} candidates for '{ent.text}'")
+#
+#         # Clear progress callback after processing
+#         self.progress_callback = None
+#
+#         return doc
 
 
 # ============================================================================

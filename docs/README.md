@@ -67,7 +67,7 @@ The pipeline uses spaCy's component system where each stage is a registered fact
 │                              ▼                                │
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │  Candidate Generator (ent._.candidates populated)       │  │
-│  │  Factories: el_pipeline_lela_bm25_candidates,          │  │
+│  │  Factories: el_pipeline_bm25_candidates,                │  │
 │  │             _lela_dense_candidates, _fuzzy_candidates,  │  │
 │  │             _bm25_candidates                            │  │
 │  └─────────────────────────────────────────────────────────┘  │
@@ -167,7 +167,7 @@ python -m spacy download en_core_web_sm
 **Using the CLI:**
 ```bash
 python -m el_pipeline.cli \
-  --config config/lela_bm25_only.json \
+  --config config/bm25_only.json \
   --input document.txt \
   --output results.jsonl
 ```

@@ -174,12 +174,6 @@ Each NER option maps to a spaCy pipeline factory:
 - **top_k**: Number of candidates
 - Uses FAISS for similarity search
 
-#### LELA BM25
-- **spaCy Factory:** `el_pipeline_lela_bm25_candidates`
-- **top_k**: Number of candidates (default: 64)
-- **use_context**: Include mention context in query
-- Uses bm25s with stemming for better matching
-
 #### LELA Dense
 - **spaCy Factory:** `el_pipeline_lela_dense_candidates`
 - **model_name**: Embedding model
@@ -400,7 +394,7 @@ Better accuracy for production use with larger KBs:
 For custom entity types and domain adaptation:
 
 - **NER**: gliner or lela_gliner
-- **Candidates**: dense or lela_bm25
+- **Candidates**: dense or bm25
 - **Reranker**: none or lela_embedder
 - **Disambiguator**: popularity or lela_vllm
 
@@ -409,7 +403,7 @@ For custom entity types and domain adaptation:
 Maximum accuracy with LLM disambiguation:
 
 - **NER**: lela_gliner (threshold: 0.5)
-- **Candidates**: lela_bm25 (top_k: 64)
+- **Candidates**: bm25 (top_k: 64)
 - **Reranker**: lela_embedder (top_k: 10)
 - **Disambiguator**: lela_vllm
 

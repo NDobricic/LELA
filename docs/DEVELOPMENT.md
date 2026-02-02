@@ -524,7 +524,7 @@ All component types can be combined freely. Here are some recommended combinatio
 | Stage | Component | Notes |
 |-------|-----------|-------|
 | NER | `lela_gliner` | Zero-shot, good accuracy |
-| Candidates | `lela_bm25` | Fast BM25 with stemming |
+| Candidates | `bm25` | Fast BM25 with stemming |
 | Reranker | `none` | Skip for speed |
 | Disambiguator | `first` | Select first candidate |
 
@@ -533,7 +533,7 @@ All component types can be combined freely. Here are some recommended combinatio
 | Stage | Component | Notes |
 |-------|-----------|-------|
 | NER | `lela_gliner` | Zero-shot NER |
-| Candidates | `lela_bm25` | 64 candidates |
+| Candidates | `bm25` | 64 candidates |
 | Reranker | `lela_embedder` | Reduce to 10 |
 | Disambiguator | `lela_vllm` | LLM disambiguation |
 

@@ -78,7 +78,7 @@ nlp.add_pipe("el_pipeline_lela_gliner", config={
 })
 
 # Add candidate generation
-cand = nlp.add_pipe("el_pipeline_lela_bm25_candidates", config={
+cand = nlp.add_pipe("el_pipeline_bm25_candidates", config={
     "top_k": 64
 })
 
@@ -106,7 +106,6 @@ doc = nlp("Albert Einstein visited Paris.")
 | `simple` | `el_pipeline_simple` |
 | `gliner` | `el_pipeline_gliner` |
 | `transformers` | `el_pipeline_transformers` |
-| `lela_bm25` | `el_pipeline_lela_bm25_candidates` |
 | `lela_dense` | `el_pipeline_lela_dense_candidates` |
 | `fuzzy` | `el_pipeline_fuzzy_candidates` |
 | `bm25` | `el_pipeline_bm25_candidates` |
@@ -318,7 +317,7 @@ Candidate components populate `ent._.candidates` with `List[Candidate]` objects 
 
 Fast BM25 retrieval using bm25s library.
 
-**Factory:** `el_pipeline_lela_bm25_candidates`
+**Factory:** `el_pipeline_bm25_candidates`
 
 **Config:**
 | Parameter | Type | Default | Description |

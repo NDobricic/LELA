@@ -281,23 +281,6 @@ nlp.add_pipe("el_pipeline_ner_filter")
 
 ### Candidate Generation Components
 
-#### `el_pipeline_lela_bm25_candidates`
-
-BM25 retrieval using bm25s library with stemming.
-
-**Config Options:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `top_k` | int | 64 | Maximum candidates |
-| `use_context` | bool | True | Include context in query |
-| `stemmer_language` | str | "english" | Stemmer language |
-
-**Requires initialization:**
-```python
-component = nlp.add_pipe("el_pipeline_lela_bm25_candidates")
-component.initialize(kb)
-```
-
 #### `el_pipeline_lela_dense_candidates`
 
 Dense retrieval using OpenAI-compatible embeddings and FAISS.
@@ -571,7 +554,6 @@ candidates = tuples_to_candidates(tuples_list)
 | `transformers` | `el_pipeline_transformers` |
 | `spacy` | Built-in NER + `el_pipeline_ner_filter` |
 | **Candidate Generators** | |
-| `lela_bm25` | `el_pipeline_lela_bm25_candidates` |
 | `lela_dense` | `el_pipeline_lela_dense_candidates` |
 | `fuzzy` | `el_pipeline_fuzzy_candidates` |
 | `bm25` | `el_pipeline_bm25_candidates` |
@@ -693,7 +675,7 @@ pipeline = NERPipeline(config, progress_callback=init_callback)
 # Init 15%: Initializing document loader...
 # Init 20%: Building spaCy pipeline...
 # Init 25%: Loading NER model (lela_gliner)...
-# Init 45%: Loading candidate generator (lela_bm25)...
+# Init 45%: Loading candidate generator (bm25)...
 # Init 75%: Loading disambiguator (lela_vllm)...
 # Init 100%: Pipeline initialization complete
 ```
@@ -931,7 +913,7 @@ config_dict = {
         }
     },
     "candidate_generator": {
-        "name": "lela_bm25",
+        "name": "bm25",
         "params": {"top_k": 64, "use_context": True}
     },
     "reranker": {
