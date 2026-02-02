@@ -1,7 +1,7 @@
 """Default configuration values for LELA components."""
 
 # NER labels for zero-shot entity recognition
-NER_LABELS = ["person", "organization", "location", "event", "work of art", "product"]
+NER_LABELS = ["person", "organization", "location"]
 
 # Model IDs
 DEFAULT_GLINER_MODEL = "numind/NuNER_Zero-span"

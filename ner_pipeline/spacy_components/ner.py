@@ -2,10 +2,8 @@
 spaCy NER components for the NER pipeline.
 
 Provides factories and components for various NER implementations:
-- LELAGLiNERComponent: Zero-shot GLiNER NER
+- GLiNERComponent: Zero-shot GLiNER NER
 - SimpleNERComponent: Regex-based NER
-- GLiNERComponent: Standard GLiNER wrapper
-- TransformersNERComponent: HuggingFace NER
 - NERFilterComponent: Post-filter for spaCy's built-in NER
 """
 
@@ -35,6 +33,7 @@ def _get_gliner():
     if _GLiNER is None:
         try:
             from gliner import GLiNER
+
             _GLiNER = GLiNER
         except ImportError:
             raise ImportError(
@@ -45,15 +44,16 @@ def _get_gliner():
 
 
 # ============================================================================
-# LELA GLiNER NER Component
+# GLiNER NER Component
 # ============================================================================
 
+
 @Language.factory(
-    "ner_pipeline_lela_gliner",
+    "ner_pipeline_gliner",
     default_config={
         "model_name": DEFAULT_GLINER_MODEL,
         "labels": list(NER_LABELS),
-        "threshold": 0.5,
+        "threshold": 0.4,
         "context_mode": "sentence",
     },
 )
@@ -66,7 +66,7 @@ def create_lela_gliner_component(
     context_mode: str,
 ):
     """Factory for LELA GLiNER NER component."""
-    return LELAGLiNERComponent(
+    return GLiNERComponent(
         nlp=nlp,
         model_name=model_name,
         labels=labels,
@@ -75,7 +75,7 @@ def create_lela_gliner_component(
     )
 
 
-class LELAGLiNERComponent:
+class GLiNERComponent:
     """
     Zero-shot GLiNER NER component for spaCy.
 
@@ -104,6 +104,25 @@ class LELAGLiNERComponent:
         self.model = GLiNER.from_pretrained(model_name)
         logger.info(f"LELA GLiNER loaded with labels: {self.labels}")
 
+    @staticmethod
+    def merge_entities(entities, text):
+        if not entities:
+            return []
+        merged = []
+        current = entities[0]
+        for next_entity in entities[1:]:
+            if next_entity["label"] == current["label"] and (
+                next_entity["start"] == current["end"] + 1
+                or next_entity["start"] == current["end"]
+            ):
+                current["text"] = text[current["start"] : next_entity["end"]].strip()
+                current["end"] = next_entity["end"]
+            else:
+                merged.append(current)
+                current = next_entity
+        merged.append(current)
+        return merged
+
     def __call__(self, doc: Doc) -> Doc:
         """Process document and add entities.
 
@@ -116,8 +135,8 @@ class LELAGLiNERComponent:
 
         # Chunk long documents to handle GLiNER's token limit
         # Use ~1500 chars per chunk with 200 char overlap
-        chunk_size = 1500
-        overlap = 200
+        chunk_size = 360
+        overlap = 20
 
         all_predictions = []
 
@@ -137,7 +156,7 @@ class LELAGLiNERComponent:
                 # Try to break at sentence boundary
                 if end < len(text):
                     # Look for sentence end near chunk boundary
-                    for sep in ['. ', '.\n', '? ', '!\n', '\n\n']:
+                    for sep in [". ", ".\n", "? ", "!\n", "\n\n"]:
                         last_sep = text[start:end].rfind(sep)
                         if last_sep > chunk_size // 2:
                             end = start + last_sep + len(sep)
@@ -160,6 +179,9 @@ class LELAGLiNERComponent:
                 # Move to next chunk with overlap
                 start = end - overlap if end < len(text) else len(text)
 
+        # Merge adjacent entities of the same label
+        all_predictions = self.merge_entities(all_predictions, text)
+
         spans = []
         for pred in all_predictions:
             start_char = pred["start"]
@@ -175,7 +197,9 @@ class LELAGLiNERComponent:
             new_span = Span(doc, span.start, span.end, label=label)
 
             # Store context
-            context = extract_context(text, start_char, end_char, mode=self.context_mode)
+            context = extract_context(
+                text, start_char, end_char, mode=self.context_mode
+            )
             new_span._.context = context
 
             spans.append(new_span)
@@ -183,13 +207,16 @@ class LELAGLiNERComponent:
         # Filter overlapping spans (keep longest)
         doc.ents = filter_spans(spans)
 
-        logger.debug(f"Extracted {len(doc.ents)} entities from document ({len(text)} chars)")
+        logger.debug(
+            f"Extracted {len(doc.ents)} entities from document ({len(text)} chars)"
+        )
         return doc
 
 
 # ============================================================================
 # Simple Regex NER Component
 # ============================================================================
+
 
 @Language.factory(
     "ner_pipeline_simple",
@@ -249,7 +276,9 @@ class SimpleNERComponent:
                 continue
 
             new_span = Span(doc, span.start, span.end, label="ENT")
-            context = extract_context(text, start_char, end_char, mode=self.context_mode)
+            context = extract_context(
+                text, start_char, end_char, mode=self.context_mode
+            )
             new_span._.context = context
             spans.append(new_span)
 
@@ -261,208 +290,217 @@ class SimpleNERComponent:
 # Standard GLiNER Component (non-LELA)
 # ============================================================================
 
-@Language.factory(
-    "ner_pipeline_gliner",
-    default_config={
-        "model_name": "urchade/gliner_base",
-        "labels": ["person", "organization", "location"],
-        "threshold": 0.5,
-        "context_mode": "sentence",
-    },
-)
-def create_gliner_component(
-    nlp: Language,
-    name: str,
-    model_name: str,
-    labels: List[str],
-    threshold: float,
-    context_mode: str,
-):
-    """Factory for standard GLiNER component."""
-    return GLiNERComponent(
-        nlp=nlp,
-        model_name=model_name,
-        labels=labels,
-        threshold=threshold,
-        context_mode=context_mode,
-    )
 
-
-class GLiNERComponent:
-    """
-    Standard GLiNER NER component for spaCy.
-
-    Similar to LELAGLiNERComponent but uses different defaults.
-    """
-
-    def __init__(
-        self,
-        nlp: Language,
-        model_name: str = "urchade/gliner_base",
-        labels: Optional[List[str]] = None,
-        threshold: float = 0.5,
-        context_mode: str = "sentence",
-    ):
-        self.nlp = nlp
-        self.model_name = model_name
-        self.labels = labels or ["person", "organization", "location"]
-        self.threshold = threshold
-        self.context_mode = context_mode
-
-        ensure_context_extension()
-
-        GLiNER = _get_gliner()
-        logger.info(f"Loading GLiNER model: {model_name}")
-        self.model = GLiNER.from_pretrained(model_name)
-
-    def __call__(self, doc: Doc) -> Doc:
-        """Process document and add entities."""
-        text = doc.text
-        if not text or not text.strip():
-            return doc
-
-        predictions = self.model.predict_entities(
-            text,
-            labels=self.labels,
-            threshold=self.threshold,
-        )
-
-        spans = []
-        for pred in predictions:
-            start_char = pred["start"]
-            end_char = pred["end"]
-
-            span = doc.char_span(start_char, end_char, alignment_mode="expand")
-            if span is None:
-                continue
-
-            label = pred.get("label", "ENT")
-            new_span = Span(doc, span.start, span.end, label=label)
-            context = extract_context(text, start_char, end_char, mode=self.context_mode)
-            new_span._.context = context
-            spans.append(new_span)
-
-        doc.ents = filter_spans(spans)
-        return doc
+# @Language.factory(
+#     "ner_pipeline_gliner",
+#     default_config={
+#         "model_name": "urchade/gliner_base",
+#         "labels": ["person", "organization", "location"],
+#         "threshold": 0.5,
+#         "context_mode": "sentence",
+#     },
+# )
+# def create_gliner_component(
+#     nlp: Language,
+#     name: str,
+#     model_name: str,
+#     labels: List[str],
+#     threshold: float,
+#     context_mode: str,
+# ):
+#     """Factory for standard GLiNER component."""
+#     return GLiNERComponent(
+#         nlp=nlp,
+#         model_name=model_name,
+#         labels=labels,
+#         threshold=threshold,
+#         context_mode=context_mode,
+#     )
+#
+#
+# class GLiNERComponent:
+#     """
+#     Standard GLiNER NER component for spaCy.
+#
+#     Similar to LELAGLiNERComponent but uses different defaults.
+#     """
+#
+#     def __init__(
+#         self,
+#         nlp: Language,
+#         model_name: str = "urchade/gliner_base",
+#         labels: Optional[List[str]] = None,
+#         threshold: float = 0.5,
+#         context_mode: str = "sentence",
+#     ):
+#         self.nlp = nlp
+#         self.model_name = model_name
+#         self.labels = labels or ["person", "organization", "location"]
+#         self.threshold = threshold
+#         self.context_mode = context_mode
+#
+#         ensure_context_extension()
+#
+#         GLiNER = _get_gliner()
+#         logger.info(f"Loading GLiNER model: {model_name}")
+#         self.model = GLiNER.from_pretrained(model_name)
+#
+#     def __call__(self, doc: Doc) -> Doc:
+#         """Process document and add entities."""
+#         text = doc.text
+#         if not text or not text.strip():
+#             return doc
+#
+#         predictions = self.model.predict_entities(
+#             text,
+#             labels=self.labels,
+#             threshold=self.threshold,
+#         )
+#
+#         spans = []
+#         for pred in predictions:
+#             start_char = pred["start"]
+#             end_char = pred["end"]
+#
+#             span = doc.char_span(start_char, end_char, alignment_mode="expand")
+#             if span is None:
+#                 continue
+#
+#             label = pred.get("label", "ENT")
+#             new_span = Span(doc, span.start, span.end, label=label)
+#             context = extract_context(
+#                 text, start_char, end_char, mode=self.context_mode
+#             )
+#             new_span._.context = context
+#             spans.append(new_span)
+#
+#         doc.ents = filter_spans(spans)
+#         return doc
 
 
 # ============================================================================
 # Transformers NER Component
 # ============================================================================
 
-@Language.factory(
-    "ner_pipeline_transformers",
-    default_config={
-        "model_name": "dslim/bert-base-NER",
-        "context_mode": "sentence",
-        "aggregation_strategy": "simple",
-        "stride": 128,
-    },
-)
-def create_transformers_ner_component(
-    nlp: Language,
-    name: str,
-    model_name: str,
-    context_mode: str,
-    aggregation_strategy: str,
-    stride: int,
-):
-    """Factory for Transformers NER component."""
-    return TransformersNERComponent(
-        nlp=nlp,
-        model_name=model_name,
-        context_mode=context_mode,
-        aggregation_strategy=aggregation_strategy,
-        stride=stride,
-    )
 
-
-class TransformersNERComponent:
-    """
-    HuggingFace Transformers NER component for spaCy.
-
-    Uses the transformers pipeline for token classification.
-    Supports long documents via stride-based chunking.
-    """
-
-    def __init__(
-        self,
-        nlp: Language,
-        model_name: str = "dslim/bert-base-NER",
-        context_mode: str = "sentence",
-        aggregation_strategy: str = "simple",
-        stride: int = 128,
-    ):
-        self.nlp = nlp
-        self.model_name = model_name
-        self.context_mode = context_mode
-        self.aggregation_strategy = aggregation_strategy
-        self.stride = stride
-
-        ensure_context_extension()
-
-        # Lazy import transformers
-        try:
-            from transformers import pipeline, AutoTokenizer
-
-            # Get the tokenizer to determine max length
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            max_length = getattr(tokenizer, "model_max_length", 512)
-            # Some tokenizers report very large max_length, cap it
-            if max_length > 100000:
-                max_length = 512
-
-            self.ner_pipeline = pipeline(
-                "ner",
-                model=model_name,
-                tokenizer=tokenizer,
-                aggregation_strategy=aggregation_strategy,
-                stride=stride,
-                truncation=True,
-                max_length=max_length,
-            )
-            self.max_length = max_length
-        except ImportError:
-            raise ImportError(
-                "transformers package required. Install with: pip install transformers"
-            )
-
-        logger.info(f"Loaded Transformers NER model: {model_name} (max_length={self.max_length}, stride={stride})")
-
-    def __call__(self, doc: Doc) -> Doc:
-        """Process document and add entities."""
-        text = doc.text
-        if not text or not text.strip():
-            return doc
-
-        predictions = self.ner_pipeline(text)
-
-        spans = []
-        for pred in predictions:
-            start_char = pred["start"]
-            end_char = pred["end"]
-
-            span = doc.char_span(start_char, end_char, alignment_mode="expand")
-            if span is None:
-                continue
-
-            # Clean label (remove B-/I- prefixes)
-            label = pred.get("entity_group", pred.get("entity", "ENT"))
-            if label.startswith(("B-", "I-")):
-                label = label[2:]
-
-            new_span = Span(doc, span.start, span.end, label=label)
-            context = extract_context(text, start_char, end_char, mode=self.context_mode)
-            new_span._.context = context
-            spans.append(new_span)
-
-        doc.ents = filter_spans(spans)
-        return doc
+# @Language.factory(
+#     "ner_pipeline_transformers",
+#     default_config={
+#         "model_name": "dslim/bert-base-NER",
+#         "context_mode": "sentence",
+#         "aggregation_strategy": "simple",
+#         "stride": 128,
+#     },
+# )
+# def create_transformers_ner_component(
+#     nlp: Language,
+#     name: str,
+#     model_name: str,
+#     context_mode: str,
+#     aggregation_strategy: str,
+#     stride: int,
+# ):
+#     """Factory for Transformers NER component."""
+#     return TransformersNERComponent(
+#         nlp=nlp,
+#         model_name=model_name,
+#         context_mode=context_mode,
+#         aggregation_strategy=aggregation_strategy,
+#         stride=stride,
+#     )
+#
+#
+# class TransformersNERComponent:
+#     """
+#     HuggingFace Transformers NER component for spaCy.
+#
+#     Uses the transformers pipeline for token classification.
+#     Supports long documents via stride-based chunking.
+#     """
+#
+#     def __init__(
+#         self,
+#         nlp: Language,
+#         model_name: str = "dslim/bert-base-NER",
+#         context_mode: str = "sentence",
+#         aggregation_strategy: str = "simple",
+#         stride: int = 128,
+#     ):
+#         self.nlp = nlp
+#         self.model_name = model_name
+#         self.context_mode = context_mode
+#         self.aggregation_strategy = aggregation_strategy
+#         self.stride = stride
+#
+#         ensure_context_extension()
+#
+#         # Lazy import transformers
+#         try:
+#             from transformers import pipeline, AutoTokenizer
+#
+#             # Get the tokenizer to determine max length
+#             tokenizer = AutoTokenizer.from_pretrained(model_name)
+#             max_length = getattr(tokenizer, "model_max_length", 512)
+#             # Some tokenizers report very large max_length, cap it
+#             if max_length > 100000:
+#                 max_length = 512
+#
+#             self.ner_pipeline = pipeline(
+#                 "ner",
+#                 model=model_name,
+#                 tokenizer=tokenizer,
+#                 aggregation_strategy=aggregation_strategy,
+#                 stride=stride,
+#                 truncation=True,
+#                 max_length=max_length,
+#             )
+#             self.max_length = max_length
+#         except ImportError:
+#             raise ImportError(
+#                 "transformers package required. Install with: pip install transformers"
+#             )
+#
+#         logger.info(
+#             f"Loaded Transformers NER model: {model_name} (max_length={self.max_length}, stride={stride})"
+#         )
+#
+#     def __call__(self, doc: Doc) -> Doc:
+#         """Process document and add entities."""
+#         text = doc.text
+#         if not text or not text.strip():
+#             return doc
+#
+#         predictions = self.ner_pipeline(text)
+#
+#         spans = []
+#         for pred in predictions:
+#             start_char = pred["start"]
+#             end_char = pred["end"]
+#
+#             span = doc.char_span(start_char, end_char, alignment_mode="expand")
+#             if span is None:
+#                 continue
+#
+#             # Clean label (remove B-/I- prefixes)
+#             label = pred.get("entity_group", pred.get("entity", "ENT"))
+#             if label.startswith(("B-", "I-")):
+#                 label = label[2:]
+#
+#             new_span = Span(doc, span.start, span.end, label=label)
+#             context = extract_context(
+#                 text, start_char, end_char, mode=self.context_mode
+#             )
+#             new_span._.context = context
+#             spans.append(new_span)
+#
+#         doc.ents = filter_spans(spans)
+#         return doc
 
 
 # ============================================================================
 # NER Filter Component (for spaCy's built-in NER)
 # ============================================================================
+
 
 @Language.component("ner_pipeline_ner_filter")
 def ner_filter_component(doc: Doc) -> Doc:

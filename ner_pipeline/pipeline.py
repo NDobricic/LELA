@@ -31,10 +31,8 @@ from .registry import (
 )
 from .types import Candidate, Document, ProgressCallback
 
-
 # Component name mapping from config names to spaCy factory names
 NER_COMPONENT_MAP = {
-    "lela_gliner": "ner_pipeline_lela_gliner",
     "simple": "ner_pipeline_simple",
     "gliner": "ner_pipeline_gliner",
     "transformers": "ner_pipeline_transformers",
@@ -114,6 +112,7 @@ class NERPipeline:
         Returns:
             Configured spaCy Language instance
         """
+
         def report(progress: float, desc: str):
             if progress_callback:
                 progress_callback(progress, desc)
@@ -143,7 +142,9 @@ class NERPipeline:
             nlp.add_pipe(factory_name, config=ner_params)
 
         # Add candidate generation component
-        report(0.45, f"Loading candidate generator ({config.candidate_generator.name})...")
+        report(
+            0.45, f"Loading candidate generator ({config.candidate_generator.name})..."
+        )
         cand_name = config.candidate_generator.name
         cand_params = dict(config.candidate_generator.params)
         # Pass cache_dir only to components that can use it
@@ -317,6 +318,7 @@ class NERPipeline:
         Returns:
             Dict with extracted entities and metadata
         """
+
         def report(local_progress: float, desc: str):
             if progress_callback:
                 actual_progress = base_progress + local_progress * progress_range
@@ -334,7 +336,9 @@ class NERPipeline:
         # Calculate progress per stage
         # Reserve some progress for entity-level processing
         num_components = len(components)
-        component_progress = 0.9 / num_components  # 90% for components, 10% for serialization
+        component_progress = (
+            0.9 / num_components
+        )  # 90% for components, 10% for serialization
 
         current_progress = 0.0
 
@@ -343,32 +347,44 @@ class NERPipeline:
             report(current_progress, f"{stage_name}...")
 
             # Set up component-level progress callback if the component supports it
-            if hasattr(component, 'progress_callback') and self._is_entity_processing_component(name):
-                def make_component_callback(base_prog: float, comp_prog: float, stage: str):
+            if hasattr(
+                component, "progress_callback"
+            ) and self._is_entity_processing_component(name):
+
+                def make_component_callback(
+                    base_prog: float, comp_prog: float, stage: str
+                ):
                     def callback(local_progress: float, desc: str):
                         actual_progress = base_prog + local_progress * comp_prog
                         report(actual_progress, f"{stage}: {desc}")
+
                     return callback
-                
+
                 component.progress_callback = make_component_callback(
                     current_progress, component_progress, stage_name
                 )
-            
+
             # Run the component
             spacy_doc = component(spacy_doc)
 
             current_progress += component_progress
 
             # Report entity count after NER component
-            if self._is_ner_component(name) and hasattr(spacy_doc, 'ents'):
+            if self._is_ner_component(name) and hasattr(spacy_doc, "ents"):
                 num_ents = len(spacy_doc.ents)
-                report(current_progress, f"{stage_name} complete: found {num_ents} entities")
+                report(
+                    current_progress,
+                    f"{stage_name} complete: found {num_ents} entities",
+                )
 
         import logging
         import sys
+
         logger = logging.getLogger(__name__)
 
-        logger.info("process_document_with_progress: all components done, serializing...")
+        logger.info(
+            "process_document_with_progress: all components done, serializing..."
+        )
         sys.stderr.flush()
         report(0.95, "Serializing results...")
         result = self._serialize_doc(spacy_doc, doc)
@@ -392,7 +408,6 @@ class NERPipeline:
     def _get_stage_description(self, component_name: str) -> str:
         """Get human-readable description for a component name."""
         descriptions = {
-            "ner_pipeline_lela_gliner": "NER (GLiNER)",
             "ner_pipeline_simple": "NER (regex)",
             "ner_pipeline_gliner": "NER (GLiNER)",
             "ner_pipeline_transformers": "NER (Transformers)",
@@ -416,7 +431,6 @@ class NERPipeline:
     def _is_ner_component(self, component_name: str) -> bool:
         """Check if component is a NER component."""
         return component_name in (
-            "ner_pipeline_lela_gliner",
             "ner_pipeline_simple",
             "ner_pipeline_gliner",
             "ner_pipeline_transformers",
@@ -504,7 +518,9 @@ class NERPipeline:
                 else:
                     entity["linking_confidence_normalized"] = None
 
-    def run(self, paths: Iterable[str], output_path: Optional[str] = None) -> List[Dict]:
+    def run(
+        self, paths: Iterable[str], output_path: Optional[str] = None
+    ) -> List[Dict]:
         """
         Process multiple files through the pipeline.
 

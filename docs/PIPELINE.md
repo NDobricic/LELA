@@ -126,32 +126,32 @@ NER components populate `doc.ents` with detected entity spans and set `ent._.con
 
 **Location:** `ner_pipeline/spacy_components/ner.py`
 
-### LELAGLiNERComponent
-
-Zero-shot GLiNER NER with LELA defaults.
-
-**Factory:** `ner_pipeline_lela_gliner`
-
-**Config:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model_name` | str | "numind/NuNER_Zero-span" | GLiNER model |
-| `labels` | List[str] | LELA defaults | Entity types |
-| `threshold` | float | 0.5 | Detection threshold |
-| `context_mode` | str | "sentence" | Context extraction |
-
-**LELA Default Labels:**
-- person
-- organization
-- location
-- event
-- work of art
-- product
-
-**Behavior:**
-- Uses GLiNER library for zero-shot NER
-- Filters overlapping spans (keeps longest)
-- Extracts context around each mention
+<!-- ### LELAGLiNERComponent -->
+<!---->
+<!-- Zero-shot GLiNER NER with LELA defaults. -->
+<!---->
+<!-- **Factory:** `ner_pipeline_lela_gliner` -->
+<!---->
+<!-- **Config:** -->
+<!-- | Parameter | Type | Default | Description | -->
+<!-- |-----------|------|---------|-------------| -->
+<!-- | `model_name` | str | "numind/NuNER_Zero-span" | GLiNER model | -->
+<!-- | `labels` | List[str] | LELA defaults | Entity types | -->
+<!-- | `threshold` | float | 0.5 | Detection threshold | -->
+<!-- | `context_mode` | str | "sentence" | Context extraction | -->
+<!---->
+<!-- **LELA Default Labels:** -->
+<!-- - person -->
+<!-- - organization -->
+<!-- - location -->
+<!-- - event -->
+<!-- - work of art -->
+<!-- - product -->
+<!---->
+<!-- **Behavior:** -->
+<!-- - Uses GLiNER library for zero-shot NER -->
+<!-- - Filters overlapping spans (keeps longest) -->
+<!-- - Extracts context around each mention -->
 
 ### SimpleNERComponent
 
