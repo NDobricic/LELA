@@ -1151,7 +1151,7 @@ if __name__ == "__main__":
                             gliner_threshold = gr.Slider(
                                 minimum=0.1,
                                 maximum=1.0,
-                                value=0.5,
+                                value=0.4,
                                 step=0.05,
                                 label="Threshold",
                             )
