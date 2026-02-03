@@ -8,7 +8,10 @@ Provides factories and components for candidate generation:
 - BM25CandidatesComponent: Standard rank-bm25 based
 """
 
+import hashlib
 import logging
+import pickle
+from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
@@ -139,7 +142,7 @@ class LELABM25CandidatesComponent:
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
-    def initialize(self, kb: KnowledgeBase):
+    def initialize(self, kb: KnowledgeBase, cache_dir: Optional[Path] = None):
         """Initialize the component with a knowledge base."""
         if kb is None:
             raise ValueError("LELA BM25 requires a knowledge base.")
@@ -152,6 +155,27 @@ class LELABM25CandidatesComponent:
         self.entities = list(kb.all_entities())
         if not self.entities:
             raise ValueError("Knowledge base is empty.")
+
+        # Try loading from cache
+        cache_hash = None
+        index_dir = None
+        if cache_dir and hasattr(kb, "identity_hash"):
+            raw = f"lela_bm25:{kb.identity_hash}:{self.stemmer_language}".encode()
+            cache_hash = hashlib.sha256(raw).hexdigest()
+            index_dir = Path(cache_dir) / "index" / f"lela_bm25_{cache_hash}"
+            try:
+                bm25s_dir = index_dir / "bm25s"
+                components_file = index_dir / "components.pkl"
+                if bm25s_dir.exists() and components_file.exists():
+                    self.retriever = bm25s.BM25.load(bm25s_dir, load_corpus=True)
+                    with components_file.open("rb") as f:
+                        self.corpus_records = pickle.load(f)
+                    # Recreate stemmer (not picklable due to Cython internals)
+                    self.stemmer = Stemmer.Stemmer(self.stemmer_language)
+                    logger.info(f"Loaded LELA BM25 index from cache ({cache_hash[:12]})")
+                    return
+            except Exception:
+                logger.warning("LELA BM25 cache load failed, will rebuild", exc_info=True)
 
         # Build corpus - include entity ID for proper resolution
         self.corpus_records = []
@@ -177,6 +201,17 @@ class LELABM25CandidatesComponent:
         self.retriever.index(corpus_tokens)
 
         logger.info("BM25 index built successfully")
+
+        # Save to cache (stemmer is not picklable, recreated on load)
+        if index_dir is not None:
+            try:
+                index_dir.mkdir(parents=True, exist_ok=True)
+                self.retriever.save(index_dir / "bm25s")
+                with (index_dir / "components.pkl").open("wb") as f:
+                    pickle.dump(self.corpus_records, f, protocol=pickle.HIGHEST_PROTOCOL)
+                logger.info(f"Saved LELA BM25 index cache ({cache_hash[:12]})")
+            except Exception:
+                logger.warning("Failed to save LELA BM25 cache", exc_info=True)
 
     def __call__(self, doc: Doc) -> Doc:
         """Generate candidates for all entities in the document."""
@@ -309,7 +344,7 @@ class LELADenseCandidatesComponent:
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
-    def initialize(self, kb: KnowledgeBase):
+    def initialize(self, kb: KnowledgeBase, cache_dir: Optional[Path] = None):
         """Initialize the component with a knowledge base."""
         if kb is None:
             raise ValueError("LELA dense retrieval requires a knowledge base.")
@@ -321,6 +356,25 @@ class LELADenseCandidatesComponent:
         self.entities = list(kb.all_entities())
         if not self.entities:
             raise ValueError("Knowledge base is empty.")
+
+        # Try loading from cache
+        cache_hash = None
+        index_file = None
+        if cache_dir and hasattr(kb, "identity_hash"):
+            raw = f"lela_dense:{kb.identity_hash}:{self.model_name}".encode()
+            cache_hash = hashlib.sha256(raw).hexdigest()
+            index_dir = Path(cache_dir) / "index" / f"lela_dense_{cache_hash}"
+            index_file = index_dir / "index.faiss"
+            try:
+                if index_file.exists():
+                    self.index = faiss.read_index(str(index_file))
+                    logger.info(
+                        f"Loaded LELA dense index from cache ({cache_hash[:12]}): "
+                        f"{self.index.ntotal} vectors"
+                    )
+                    return
+            except Exception:
+                logger.warning("LELA dense cache load failed, will rebuild", exc_info=True)
 
         # Build entity texts
         entity_texts = [
@@ -340,6 +394,15 @@ class LELADenseCandidatesComponent:
         self.index.add(embeddings)
 
         logger.info(f"Dense index built: {self.index.ntotal} vectors, dim={dim}")
+
+        # Save to cache
+        if index_file is not None:
+            try:
+                index_file.parent.mkdir(parents=True, exist_ok=True)
+                faiss.write_index(self.index, str(index_file))
+                logger.info(f"Saved LELA dense index cache ({cache_hash[:12]})")
+            except Exception:
+                logger.warning("Failed to save LELA dense cache", exc_info=True)
 
     def _embed_texts(self, texts: List[str], model) -> np.ndarray:
         """Embed texts using the SentenceTransformer model."""
@@ -469,7 +532,7 @@ class FuzzyCandidatesComponent:
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
-    def initialize(self, kb: KnowledgeBase):
+    def initialize(self, kb: KnowledgeBase, cache_dir: Optional[Path] = None):
         """Initialize the component with a knowledge base."""
         if kb is None:
             raise ValueError("Fuzzy matching requires a knowledge base.")
@@ -609,7 +672,7 @@ class BM25CandidatesComponent:
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
-    def initialize(self, kb: KnowledgeBase):
+    def initialize(self, kb: KnowledgeBase, cache_dir: Optional[Path] = None):
         """Initialize the component with a knowledge base."""
         if kb is None:
             raise ValueError("BM25 requires a knowledge base.")
@@ -624,6 +687,24 @@ class BM25CandidatesComponent:
         self.kb = kb
         self.entities = list(kb.all_entities())
 
+        # Try loading from cache
+        cache_hash = None
+        cache_file = None
+        if cache_dir and hasattr(kb, "identity_hash"):
+            raw = f"bm25:{kb.identity_hash}".encode()
+            cache_hash = hashlib.sha256(raw).hexdigest()
+            idx_dir = Path(cache_dir) / "index"
+            idx_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = idx_dir / f"bm25_{cache_hash}.pkl"
+            try:
+                if cache_file.exists():
+                    with cache_file.open("rb") as f:
+                        self.bm25, self.corpus = pickle.load(f)
+                    logger.info(f"Loaded rank-bm25 index from cache ({cache_hash[:12]})")
+                    return
+            except Exception:
+                logger.warning("rank-bm25 cache load failed, will rebuild", exc_info=True)
+
         # Build corpus
         self.corpus = []
         for entity in self.entities:
@@ -633,6 +714,17 @@ class BM25CandidatesComponent:
 
         self.bm25 = BM25Okapi(self.corpus)
         logger.info(f"rank-bm25 index built over {len(self.entities)} entities")
+
+        # Save to cache
+        if cache_file is not None:
+            try:
+                with cache_file.open("wb") as f:
+                    pickle.dump(
+                        (self.bm25, self.corpus), f, protocol=pickle.HIGHEST_PROTOCOL
+                    )
+                logger.info(f"Saved rank-bm25 index cache ({cache_hash[:12]})")
+            except Exception:
+                logger.warning("Failed to save rank-bm25 cache", exc_info=True)
 
     def __call__(self, doc: Doc) -> Doc:
         """Generate candidates for all entities in the document."""

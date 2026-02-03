@@ -917,7 +917,7 @@ class LELATransformersDisambiguatorComponent:
                 with torch.no_grad():
                     outputs = self.model.generate(
                         **inputs,
-                        max_new_tokens=self.generation_config.get("max_tokens", 64),
+                        max_new_tokens=self.generation_config.get("max_tokens", 2048),
                         temperature=self.generation_config.get("temperature", 0.1),
                         do_sample=True,
                         pad_token_id=self.tokenizer.eos_token_id,

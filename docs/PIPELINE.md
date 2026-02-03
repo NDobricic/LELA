@@ -627,12 +627,6 @@ Knowledge bases are registry-based (not spaCy components).
 
 **Note:** Uses title as entity ID (LELA convention)
 
-### WikipediaKB / WikidataKB
-
-**Registrations:** `wikipedia`, `wikidata`
-
-Live API-based knowledge bases.
-
 ---
 
 ## Context Extraction
@@ -667,23 +661,62 @@ Dispatcher for both modes.
 
 ## Caching System
 
+The pipeline implements multi-level persistent caching to significantly reduce initialization time on subsequent runs.
+
+### Cache Directory Structure
+
+```
+.ner_cache/
+  <hash>.pkl                          # Document parsing cache
+  kb/<kb_hash>.pkl                    # KB entity data cache
+  index/lela_bm25_<hash>/             # LELA BM25 index cache
+    bm25s/                            # bm25s serialized index
+    components.pkl                    # corpus_records
+  index/lela_dense_<hash>/            # LELA Dense index cache
+    index.faiss                       # FAISS index file
+  index/bm25_<hash>.pkl               # rank-bm25 index cache
+```
+
+### Cache Types
+
+| Cache | Cold Load | Warm Load | Speedup |
+|-------|-----------|-----------|---------|
+| KB (YAGO 5M entities) | ~70s | ~10-15s | ~5-7x |
+| LELA BM25 index | ~5-10s | ~1-2s | ~5x |
+| LELA Dense index | ~20-30s | ~1-3s | ~10-15x |
+| rank-bm25 index | ~5-10s | ~1-2s | ~5x |
+
 ### Cache Key Generation
 
+**Document cache:**
 ```python
 key = SHA256(f"{path}-{mtime}-{size}".encode())
 ```
 
+**KB cache:**
+```python
+key = SHA256(f"kb:{path}:{mtime}:{size}".encode())
+```
+
+**Index caches:**
+```python
+# LELA BM25
+key = SHA256(f"lela_bm25:{kb.identity_hash}:{stemmer_language}".encode())
+
+# LELA Dense
+key = SHA256(f"lela_dense:{kb.identity_hash}:{model_name}".encode())
+
+# rank-bm25
+key = SHA256(f"bm25:{kb.identity_hash}".encode())
+```
+
+### Cache Invalidation
+
+- **Automatic**: Caches are keyed by file path + mtime + size, so modifying the source file invalidates the cache
+- **Index dependency**: Index caches depend on KB identity_hash, so they auto-invalidate when KB changes
+- **Manual**: Delete the `.ner_cache/` directory to force a full rebuild
+- **Corruption handling**: All cache loads are wrapped in try/except; corrupted caches fall back to full rebuild
+
 ### Cache Location
 
-Default: `.ner_cache/` (configurable)
-
-### Cache Behavior
-
-1. Compute hash from file path, modification time, size
-2. Check if cache file exists
-3. If exists: load cached Document list
-4. If not: load from disk, cache, return
-
-### Disabling Cache
-
-Set `cache_dir` to `None` in configuration.
+Default: `.ner_cache/` (configurable via `cache_dir` in pipeline config)

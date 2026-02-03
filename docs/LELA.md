@@ -537,25 +537,59 @@ This is useful when:
 - Your candidate generator already orders candidates well
 - You're using a lightweight pipeline configuration
 
-### Cache Key Generation
+### Caching System
 
-The pipeline uses content-addressed caching for processed documents. Cache keys are generated as:
+The pipeline uses multi-level persistent caching for documents, knowledge bases, and candidate generator indexes.
 
-```python
-key = SHA256(f"{file_path}-{modification_time}-{file_size}".encode()).hexdigest()
+#### Cache Directory Structure
+
+```
+.ner_cache/
+  <hash>.pkl                          # Document parsing cache
+  kb/<kb_hash>.pkl                    # KB entity data cache
+  index/lela_bm25_<hash>/             # LELA BM25 index
+    bm25s/                            # bm25s serialized index
+    components.pkl                    # corpus_records
+  index/lela_dense_<hash>/            # LELA Dense index
+    index.faiss                       # FAISS index
+  index/bm25_<hash>.pkl               # rank-bm25 index
 ```
 
-**Components:**
-- `file_path`: Full path to the document
-- `modification_time`: File's mtime from `os.stat()`
-- `file_size`: File size in bytes
+#### Performance Impact
 
-**Location:** Cache files are stored in `.ner_cache/` (configurable via `cache_dir`)
+| Component | Cold Load | Warm Load | Speedup |
+|-----------|-----------|-----------|---------|
+| KB (YAGO 5M entities) | ~70s | ~10-15s | ~5-7x |
+| LELA BM25 index | ~5-10s | ~1-2s | ~5x |
+| LELA Dense index | ~20-30s | ~1-3s | ~10-15x |
+| rank-bm25 index | ~5-10s | ~1-2s | ~5x |
+| **Total init** | **~100-120s** | **~13-22s** | **~5-8x** |
 
-**Cache invalidation:** The cache is automatically invalidated when:
-- The file path changes
-- The file is modified (mtime changes)
-- The file size changes
+#### Cache Key Generation
+
+**Document cache:**
+```python
+key = SHA256(f"{file_path}-{mtime}-{file_size}".encode()).hexdigest()
+```
+
+**KB cache:**
+```python
+key = SHA256(f"kb:{path}:{mtime}:{size}".encode()).hexdigest()
+```
+
+**Index caches (depend on KB identity):**
+```python
+key = SHA256(f"lela_bm25:{kb.identity_hash}:{stemmer_language}".encode()).hexdigest()
+key = SHA256(f"lela_dense:{kb.identity_hash}:{model_name}".encode()).hexdigest()
+key = SHA256(f"bm25:{kb.identity_hash}".encode()).hexdigest()
+```
+
+#### Cache Invalidation
+
+- **Automatic**: Modifying a source file changes its mtime, invalidating the cache
+- **Cascading**: Index caches depend on KB identity_hash, so they auto-invalidate when KB changes
+- **Corruption handling**: All loads are wrapped in try/except, corrupted caches fall back to rebuild
+- **Manual**: Delete `.ner_cache/` to force full rebuild
 
 **Disabling cache:** Set `cache_dir` to `None` in configuration (not recommended for production)
 

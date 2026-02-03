@@ -252,8 +252,8 @@ class SQLiteKnowledgeBase:
 |------|-------|----------|
 | `custom` | `CustomJSONLKnowledgeBase` | `ner_pipeline/knowledge_bases/custom.py` |
 | `lela_jsonl` | `LELAJSONLKnowledgeBase` | `ner_pipeline/knowledge_bases/lela_jsonl.py` |
-| `wikipedia` | `WikipediaKB` | `ner_pipeline/knowledge_bases/wikipedia.py` |
-| `wikidata` | `WikidataKB` | `ner_pipeline/knowledge_bases/wikidata.py` |
+
+**Note:** `CustomJSONLKnowledgeBase` supports persistent caching via the `cache_dir` parameter. When provided, parsed KB data is cached to disk and reused on subsequent loads, significantly reducing initialization time for large knowledge bases.
 
 ---
 

@@ -54,7 +54,7 @@ RERANKER_TASK = (
 # Default generation config for LLM disambiguation
 # Qwen3 needs more tokens due to thinking mode
 DEFAULT_GENERATION_CONFIG = {
-    "max_tokens": 512,  # More tokens for thinking mode + answer
+    "max_tokens": 2048,  # More tokens for thinking mode + answer
     "temperature": 0.1,  # Low temperature for deterministic outputs
     "top_p": 0.9,
     "repetition_penalty": 1.1,  # Prevent repetitive garbage output

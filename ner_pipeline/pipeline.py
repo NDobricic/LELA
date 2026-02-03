@@ -93,6 +93,7 @@ class NERPipeline:
 
         self.kb = None
         if config.knowledge_base:
+            config.knowledge_base.params["cache_dir"] = str(self.cache_dir)
             kb_factory = knowledge_bases.get(config.knowledge_base.name)
             self.kb = kb_factory(**config.knowledge_base.params)
 
@@ -157,7 +158,7 @@ class NERPipeline:
 
         # Initialize with KB if needed
         if hasattr(cand_component, "initialize") and self.kb is not None:
-            cand_component.initialize(self.kb)
+            cand_component.initialize(self.kb, cache_dir=self.cache_dir)
 
         # Add reranker component
         if config.reranker and config.reranker.name != "none":

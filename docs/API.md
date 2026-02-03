@@ -622,10 +622,8 @@ The `json` and `jsonl` loaders support a `text_field` parameter to customize whi
 
 | Name | Parameters | Description |
 |------|------------|-------------|
-| `custom` | `path` | Custom JSONL KB |
+| `custom` | `path`, `cache_dir` | Custom JSONL KB (supports persistent caching) |
 | `lela_jsonl` | `path`, `title_field`, `description_field` | LELA-format JSONL KB |
-| `wikipedia` | - | Wikipedia API |
-| `wikidata` | - | Wikidata SPARQL |
 
 ## Context Extraction
 

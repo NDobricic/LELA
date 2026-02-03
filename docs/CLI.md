@@ -349,13 +349,34 @@ For LELA components, the format uses title as the ID:
 
 ## Caching
 
-The CLI uses document caching to avoid reprocessing unchanged files:
+The CLI uses multi-level persistent caching to speed up subsequent runs:
 
-- Cache location: `.ner_cache/` directory (configurable via `cache_dir`)
-- Cache key: SHA256 hash of `{path}-{mtime}-{size}`
-- Automatic invalidation when files change
+### Cache Types
 
-To clear the cache:
+| Cache | Purpose | Speedup |
+|-------|---------|---------|
+| Document | Parsed document data | Avoids re-parsing |
+| Knowledge Base | Parsed KB entities | ~5-7x for large KBs |
+| LELA BM25 Index | bm25s index + corpus | ~5x |
+| LELA Dense Index | FAISS embeddings | ~10-15x |
+| rank-bm25 Index | BM25Okapi index | ~5x |
+
+### Cache Location
+
+```
+.ner_cache/
+  <hash>.pkl                    # Document cache
+  kb/<hash>.pkl                 # KB entity cache
+  index/lela_bm25_<hash>/       # LELA BM25 index
+  index/lela_dense_<hash>/      # LELA Dense (FAISS) index
+  index/bm25_<hash>.pkl         # rank-bm25 index
+```
+
+### Cache Invalidation
+
+- **Automatic**: Modifying a file changes its mtime, invalidating its cache
+- **Index dependency**: Index caches depend on KB hash, so they auto-invalidate when KB changes
+- **Manual**: Delete `.ner_cache/` to force a full rebuild
 
 ```bash
 rm -rf .ner_cache/
