@@ -614,15 +614,15 @@ choice in the answer field with only the choice index number."""
 
 Singleton pools for resource management.
 
-**EmbedderPool:**
-- Manages OpenAI-compatible API client
-- Singleton pattern for efficiency
-- Methods: `get_client()`, `embed()`
+**SentenceTransformer Pool:**
+- Manages local SentenceTransformer instances for embeddings
+- Lazy loading with memory-aware eviction of unused models
+- Functions: `get_sentence_transformer_instance()`, `release_sentence_transformer()`
 
 **vLLM Instance Manager:**
-- Lazy loading of vLLM
+- Lazy loading of vLLM with memory-aware eviction
 - Caches by model_name:tensor_parallel_size
-- Functions: `get_vllm_instance()`, `clear_vllm_instances()`
+- Functions: `get_vllm_instance()`, `release_vllm()`, `clear_vllm_instances()`
 
 ## Usage Examples
 

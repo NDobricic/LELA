@@ -75,7 +75,7 @@ The web interface uses a single-page layout with configuration at the top and re
 
 - **Text Input**: Direct text entry box with sample text pre-filled
 - **File Upload**: Upload documents (txt, pdf, docx, html)
-- **Knowledge Base**: Upload JSONL file containing entities
+- **Knowledge Base**: Upload JSONL file containing entities (optional — defaults to YAGO 4.5, auto-downloaded on first use)
 
 ### Configuration Section
 
@@ -258,8 +258,8 @@ Each NER option maps to a spaCy pipeline factory:
    - Type text directly in the input box, OR
    - Upload a file (txt, pdf, docx, html)
 
-2. **Upload Knowledge Base**
-   - Upload a JSONL file containing entities
+2. **Upload Knowledge Base** (optional)
+   - Upload a JSONL file containing entities, or skip to use YAGO 4.5 (auto-downloaded on first use)
    - Format: `{"id": "...", "title": "...", "description": "..."}`
 
 3. **Configure Pipeline**

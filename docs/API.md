@@ -302,15 +302,14 @@ component.initialize(kb)
 
 #### `ner_pipeline_lela_dense_candidates`
 
-Dense retrieval using OpenAI-compatible embeddings and FAISS.
+Dense retrieval using SentenceTransformers and FAISS.
 
 **Config Options:**
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `model_name` | str | LELA default | Embedding model |
 | `top_k` | int | 64 | Maximum candidates |
-| `base_url` | str | "http://localhost" | API endpoint |
-| `port` | int | 8000 | API port |
+| `device` | str | None | Device override (e.g., "cuda", "cpu") |
 | `use_context` | bool | True | Include context in query |
 
 #### `ner_pipeline_fuzzy_candidates`
@@ -342,8 +341,7 @@ Embedding-based cosine similarity reranking with marked mentions.
 |-----------|------|---------|-------------|
 | `model_name` | str | LELA default | Embedding model |
 | `top_k` | int | 10 | Candidates to keep |
-| `base_url` | str | "http://localhost" | API endpoint |
-| `port` | int | 8000 | API port |
+| `device` | str | None | Device override (e.g., "cuda", "cpu") |
 
 #### `ner_pipeline_cross_encoder_reranker`
 
@@ -940,9 +938,7 @@ config_dict = {
         "name": "lela_embedder",
         "params": {
             "model_name": "Qwen/Qwen3-Embedding-4B",
-            "top_k": 10,
-            "base_url": "http://localhost",
-            "port": 8000
+            "top_k": 10
         }
     },
     "disambiguator": {

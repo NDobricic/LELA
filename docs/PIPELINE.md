@@ -346,8 +346,7 @@ Dense retrieval using embeddings and FAISS.
 |-----------|------|---------|-------------|
 | `model_name` | str | LELA default | Embedding model |
 | `top_k` | int | 64 | Maximum candidates |
-| `base_url` | str | "http://localhost" | API endpoint |
-| `port` | int | 8000 | API port |
+| `device` | str | None | Device override (e.g., "cuda", "cpu") |
 | `use_context` | bool | True | Include context |
 
 **Requires:** `initialize(kb)` call
@@ -408,8 +407,7 @@ Embedding-based cosine similarity reranking.
 |-----------|------|---------|-------------|
 | `model_name` | str | LELA default | Embedding model |
 | `top_k` | int | 10 | Candidates to keep |
-| `base_url` | str | "http://localhost" | API endpoint |
-| `port` | int | 8000 | API port |
+| `device` | str | None | Device override (e.g., "cuda", "cpu") |
 
 **Mention Marking:**
 ```
