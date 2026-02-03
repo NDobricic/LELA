@@ -543,11 +543,10 @@ def run_pipeline(
     no_tab_switch = gr.update()
 
     if not kb_file:
-        yield (*format_error_output(
-            "Missing Knowledge Base",
-            "Please upload a knowledge base JSONL file."
-        ), no_tab_switch)
-        return
+        from ner_pipeline.knowledge_bases.yago_downloader import ensure_yago_kb
+        kb_path = ensure_yago_kb()
+    else:
+        kb_path = kb_file.name
 
     if not text_input and not file_input:
         yield (*format_error_output(
@@ -585,9 +584,7 @@ def run_pipeline(
         cand_params["model_name"] = cand_embedding_model
 
     # Build reranker params
-    reranker_params = {}
-    if reranker_type != "none":
-        reranker_params["top_k"] = reranker_top_k
+    reranker_params = {"top_k": reranker_top_k}
     if reranker_type == "lela_embedder":
         reranker_params["model_name"] = reranker_embedding_model
 
@@ -606,9 +603,9 @@ def run_pipeline(
         "loader": {"name": loader_type, "params": {}},
         "ner": {"name": ner_type, "params": ner_params},
         "candidate_generator": {"name": cand_type, "params": cand_params},
-        "reranker": {"name": reranker_type, "params": reranker_params} if reranker_type != "none" else {"name": "none", "params": {}},
+        "reranker": {"name": reranker_type, "params": reranker_params},
         "disambiguator": {"name": disambig_type, "params": disambig_params} if disambig_type != "none" else None,
-        "knowledge_base": {"name": kb_type, "params": {"path": kb_file.name}},
+        "knowledge_base": {"name": kb_type, "params": {"path": kb_path}},
         "cache_dir": ".ner_cache",
         "batch_size": 1,
     }
@@ -632,6 +629,7 @@ def run_pipeline(
 
         pipeline = NERPipeline(config, progress_callback=init_progress_callback)
     except Exception as e:
+        logger.exception("Pipeline initialization failed")
         yield (*format_error_output("Pipeline Initialization Failed", str(e)), no_tab_switch)
         return
 
@@ -676,21 +674,52 @@ def run_pipeline(
         progress(0.45, desc="Processing document...")
         yield "", "*Processing document...*", {}, no_tab_switch
 
-        # Process with fine-grained progress callback that also checks for cancellation
+        # Run pipeline in a thread so the Gradio event loop stays responsive
+        # and progress bar polls keep working during CPU-bound processing.
+        import queue, threading
+
+        progress_queue: queue.Queue = queue.Queue()
+        result_holder: list = []
+        error_holder: list = []
+
         def progress_callback(local_progress: float, description: str):
-            # Map local progress (0.0-1.0) to our range (0.45-0.85)
             actual_progress = 0.45 + local_progress * 0.4
-            progress(actual_progress, desc=description)
-            # Raise exception if cancelled to interrupt processing
+            progress_queue.put((actual_progress, description))
             if _cancel_event.is_set():
                 raise InterruptedError("Pipeline cancelled by user")
 
-        result = pipeline.process_document_with_progress(
-            doc,
-            progress_callback=progress_callback,
-            base_progress=0.0,
-            progress_range=1.0,
-        )
+        def run_processing():
+            try:
+                r = pipeline.process_document_with_progress(
+                    doc,
+                    progress_callback=progress_callback,
+                    base_progress=0.0,
+                    progress_range=1.0,
+                )
+                result_holder.append(r)
+            except Exception as e:
+                error_holder.append(e)
+            finally:
+                progress_queue.put(None)  # sentinel
+
+        worker = threading.Thread(target=run_processing, daemon=True)
+        worker.start()
+
+        # Drain progress updates, forwarding them to Gradio
+        while True:
+            try:
+                msg = progress_queue.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            if msg is None:
+                break
+            progress(msg[0], desc=msg[1])
+
+        worker.join()
+
+        if error_holder:
+            raise error_holder[0]
+        result = result_holder[0]
 
     except InterruptedError:
         logger.info("Pipeline cancelled during processing")
@@ -1022,9 +1051,9 @@ if __name__ == "__main__":
                             file_types=[".txt", ".pdf", ".docx", ".html"],
                         )
                         kb_file = gr.File(
-                            label="Knowledge Base (JSONL)",
+                            label="Knowledge Base (JSONL) — optional, defaults to YAGO 4.5",
                             file_types=[".jsonl"],
-                            value="data/test/sample_kb.jsonl" if os.path.exists("data/test/sample_kb.jsonl") else None,
+                            value=None,
                         )
 
                 # --- RUN/CANCEL BUTTON ---

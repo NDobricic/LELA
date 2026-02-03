@@ -486,19 +486,59 @@ class FuzzyCandidatesComponent:
             logger.warning("Fuzzy component not initialized - call initialize(kb) first")
             return doc
 
-        from rapidfuzz import process
+        from rapidfuzz import process, fuzz, utils
 
         entities = list(doc.ents)
         num_entities = len(entities)
+        num_titles = len(self.titles)
+        # Chunk size for sub-entity progress reporting on large KBs
+        CHUNK_SIZE = 500_000
+        use_chunks = num_titles > CHUNK_SIZE
+
+        if self.progress_callback:
+            self.progress_callback(0.0, f"Generating candidates for {num_entities} entities...")
 
         for i, ent in enumerate(entities):
+            ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+
             # Report progress if callback is set
             if self.progress_callback and num_entities > 0:
                 progress = i / num_entities
-                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
                 self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
-            
-            results = process.extract(ent.text, self.titles, limit=self.top_k)
+
+            if use_chunks:
+                # Process in chunks to allow progress updates during long searches
+                results = []
+                for chunk_start in range(0, num_titles, CHUNK_SIZE):
+                    chunk_end = min(chunk_start + CHUNK_SIZE, num_titles)
+                    chunk_titles = self.titles[chunk_start:chunk_end]
+
+                    chunk_results = process.extract(
+                        ent.text, chunk_titles, limit=self.top_k,
+                        scorer=fuzz.WRatio, processor=utils.default_process, score_cutoff=30,
+                    )
+                    # Remap indices back to global
+                    results.extend(
+                        (title, score, idx + chunk_start)
+                        for title, score, idx in chunk_results
+                    )
+
+                    if self.progress_callback and num_entities > 0:
+                        chunk_frac = chunk_end / num_titles
+                        progress = (i + chunk_frac) / num_entities
+                        self.progress_callback(
+                            progress,
+                            f"Generating candidates {i+1}/{num_entities}: {ent_text} ({int(chunk_frac*100)}%)",
+                        )
+
+                # Keep only top_k across all chunks
+                results.sort(key=lambda x: x[1], reverse=True)
+                results = results[:self.top_k]
+            else:
+                results = process.extract(
+                    ent.text, self.titles, limit=self.top_k,
+                    scorer=fuzz.WRatio, processor=utils.default_process, score_cutoff=30,
+                )
 
             # Build candidates as List[Candidate] with entity ID
             candidates = []

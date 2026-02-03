@@ -376,13 +376,13 @@ class TestRunPipeline:
             kb_type="custom",
             progress=mock_progress,
         )
-        html_output, stats, result = self._exhaust_generator(gen)
+        html_output, stats, result, _ = self._exhaust_generator(gen)
         assert isinstance(html_output, str)
         assert isinstance(stats, str)
         assert isinstance(result, dict)
 
     def test_run_pipeline_returns_tuple(self, mock_kb_file: MockGradioFile, mock_progress: MockGradioProgress):
-        """Pipeline generator yields tuples of (html, stats, result)."""
+        """Pipeline generator yields 4-tuples of (html, stats, result, tab_switch)."""
         text_input = "Test text."
         gen = run_pipeline(
             text_input=text_input,
@@ -412,7 +412,7 @@ class TestRunPipeline:
             progress=mock_progress,
         )
         output = self._exhaust_generator(gen)
-        assert len(output) == 3
+        assert len(output) == 4
 
     def test_run_pipeline_result_structure(self, mock_kb_file: MockGradioFile, mock_progress: MockGradioProgress):
         """Result has text and entities keys."""
@@ -444,42 +444,45 @@ class TestRunPipeline:
             kb_type="custom",
             progress=mock_progress,
         )
-        _, _, result = self._exhaust_generator(gen)
+        _, _, result, _ = self._exhaust_generator(gen)
         assert "text" in result
         assert "entities" in result
 
-    def test_run_pipeline_no_kb_error(self, mock_progress: MockGradioProgress):
-        """Returns error without KB file."""
-        gen = run_pipeline(
-            text_input="Some text",
-            file_input=None,
-            kb_file=None,
-            loader_type="text",
-            ner_type="simple",
-            spacy_model="en_core_web_sm",
-            gliner_model="urchade/gliner_large",
-            gliner_labels="",
-            gliner_threshold=0.5,
-            simple_min_len=3,
-            cand_type="fuzzy",
-            cand_embedding_model="Qwen/Qwen3-Embedding-4B",
-            cand_top_k=10,
-            cand_use_context=True,
-            reranker_type="none",
-            reranker_embedding_model="Qwen/Qwen3-Embedding-4B",
-            reranker_top_k=10,
-            disambig_type="first",
-            llm_model="Qwen/Qwen3-4B",
-            tournament_batch_size=4,
-            tournament_shuffle=False,
-            lela_thinking=False,
-            lela_none_candidate=True,
-            kb_type="custom",
-            progress=mock_progress,
-        )
-        html_output, stats, result = self._exhaust_generator(gen)
-        assert "error" in result
-        assert "Knowledge Base" in result["error"]
+    def test_run_pipeline_no_kb_uses_default(self, mock_kb_file: MockGradioFile, mock_progress: MockGradioProgress):
+        """Without KB file, pipeline uses default YAGO KB."""
+        from unittest.mock import patch
+        # Mock the downloader to return the sample KB instead of downloading YAGO
+        with patch("ner_pipeline.knowledge_bases.yago_downloader.ensure_yago_kb", return_value=mock_kb_file.name):
+            gen = run_pipeline(
+                text_input="Some text",
+                file_input=None,
+                kb_file=None,
+                loader_type="text",
+                ner_type="simple",
+                spacy_model="en_core_web_sm",
+                gliner_model="urchade/gliner_large",
+                gliner_labels="",
+                gliner_threshold=0.5,
+                simple_min_len=3,
+                cand_type="fuzzy",
+                cand_embedding_model="Qwen/Qwen3-Embedding-4B",
+                cand_top_k=10,
+                cand_use_context=True,
+                reranker_type="none",
+                reranker_embedding_model="Qwen/Qwen3-Embedding-4B",
+                reranker_top_k=10,
+                disambig_type="first",
+                llm_model="Qwen/Qwen3-4B",
+                tournament_batch_size=4,
+                tournament_shuffle=False,
+                lela_thinking=False,
+                lela_none_candidate=True,
+                kb_type="custom",
+                progress=mock_progress,
+            )
+            html_output, stats, result, _ = self._exhaust_generator(gen)
+            assert isinstance(result, dict)
+            assert "text" in result
 
     def test_run_pipeline_no_input_error(self, mock_kb_file: MockGradioFile, mock_progress: MockGradioProgress):
         """Returns error without text or file input."""
@@ -510,7 +513,7 @@ class TestRunPipeline:
             kb_type="custom",
             progress=mock_progress,
         )
-        html_output, stats, result = self._exhaust_generator(gen)
+        html_output, stats, result, _ = self._exhaust_generator(gen)
         assert "error" in result
         assert "Input" in result["error"]
 
@@ -544,7 +547,7 @@ class TestRunPipeline:
             kb_type="custom",
             progress=mock_progress,
         )
-        html_output, _, _ = self._exhaust_generator(gen)
+        html_output, _, _, _ = self._exhaust_generator(gen)
         assert isinstance(html_output, str)
         # Should contain HTML markup
         assert "<" in html_output or html_output == ""

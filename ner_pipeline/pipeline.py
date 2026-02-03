@@ -24,7 +24,7 @@ from ner_pipeline import spacy_components  # noqa: F401
 from ner_pipeline import loaders as _loaders_pkg  # noqa: F401
 from ner_pipeline import knowledge_bases as _kb_pkg  # noqa: F401
 
-from .config import PipelineConfig
+from .config import ComponentConfig, PipelineConfig
 from .registry import (
     knowledge_bases,
     loaders,
@@ -86,6 +86,11 @@ class NERPipeline:
                 progress_callback(progress, desc)
 
         report(0.0, "Loading knowledge base...")
+        if config.knowledge_base is None:
+            from ner_pipeline.knowledge_bases.yago_downloader import ensure_yago_kb
+            path = ensure_yago_kb()
+            config.knowledge_base = ComponentConfig(name="custom", params={"path": path})
+
         self.kb = None
         if config.knowledge_base:
             kb_factory = knowledge_bases.get(config.knowledge_base.name)
@@ -154,7 +159,7 @@ class NERPipeline:
         if hasattr(cand_component, "initialize") and self.kb is not None:
             cand_component.initialize(self.kb)
 
-        # Add reranker component (optional)
+        # Add reranker component
         if config.reranker and config.reranker.name != "none":
             report(0.6, f"Loading reranker ({config.reranker.name})...")
             rerank_name = config.reranker.name
@@ -163,6 +168,10 @@ class NERPipeline:
             if factory_name is None:
                 raise ValueError(f"Unknown reranker: {rerank_name}")
             nlp.add_pipe(factory_name, config=rerank_params)
+        else:
+            # Always add the noop reranker to enforce top_k truncation
+            rerank_params = dict(config.reranker.params) if config.reranker else {}
+            nlp.add_pipe("ner_pipeline_noop_reranker", config=rerank_params)
 
         # Add disambiguator component (optional)
         if config.disambiguator:

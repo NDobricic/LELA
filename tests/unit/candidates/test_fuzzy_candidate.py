@@ -90,12 +90,13 @@ class TestFuzzyCandidatesComponent:
             assert len(london_candidates) > 0
             assert london_candidates[0].description == "Capital of UK"
 
-    def test_no_match_returns_some_candidates(self, nlp):
+    def test_no_match_returns_low_score_candidates(self, nlp):
         text = "Xyzabc was here."
         doc = nlp(text)
         for ent in doc.ents:
-            # Fuzzy matching still returns results (with low scores)
-            assert len(ent._.candidates) > 0
+            # Gibberish text may still return candidates but with low scores
+            for candidate in ent._.candidates:
+                assert candidate.score < 0.5
 
     def test_case_insensitive_matching(self, nlp):
         text = "LONDON is here."

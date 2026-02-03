@@ -32,6 +32,9 @@ class CustomJSONLKnowledgeBase:
                 line = line.strip()
                 if not line:
                     continue
+                # Handle YAGO N-Triples trailing "\t."
+                if line.endswith("\t."):
+                    line = line[:-2].rstrip()
                 item = json.loads(line)
                 # ID is optional - fall back to title if not provided
                 entity_id = item.get("id") or item.get("title")

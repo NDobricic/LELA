@@ -319,27 +319,33 @@ class CrossEncoderRerankerComponent:
 
 @Language.factory(
     "ner_pipeline_noop_reranker",
-    default_config={},
+    default_config={"top_k": 10},
 )
 def create_noop_reranker_component(
     nlp: Language,
     name: str,
+    top_k: int = 10,
 ):
     """Factory for no-op reranker component."""
-    return NoOpRerankerComponent(nlp=nlp)
+    return NoOpRerankerComponent(nlp=nlp, top_k=top_k)
 
 
 class NoOpRerankerComponent:
     """
     No-op reranker component for spaCy.
 
-    Passes candidates through unchanged. Use when no reranking is needed.
+    Truncates candidates to top_k. Use when no reranking is needed.
     """
 
-    def __init__(self, nlp: Language):
+    def __init__(self, nlp: Language, top_k: int = 10):
         self.nlp = nlp
+        self.top_k = top_k
         ensure_candidates_extension()
 
     def __call__(self, doc: Doc) -> Doc:
-        """Pass through - no reranking."""
+        """Truncate candidates to top_k without reranking."""
+        for ent in doc.ents:
+            candidates = getattr(ent._, "candidates", [])
+            if candidates and len(candidates) > self.top_k:
+                ent._.candidates = candidates[:self.top_k]
         return doc
