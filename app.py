@@ -660,11 +660,9 @@ def run_pipeline(
             else {"name": "none", "params": {}}
         )
         disambiguator_config = (
-            (
-                {"name": disambig_type, "params": disambig_params}
-                if disambig_type != "none"
-                else None
-            ),
+            {"name": disambig_type, "params": disambig_params}
+            if disambig_type != "none"
+            else None
         )
 
     config_dict = {
@@ -875,12 +873,10 @@ def update_cand_params(cand_choice: str):
         return (
             gr.update(visible=False),
             gr.update(visible=False),
-            gr.update(visible=False),
         )
     show_context = cand_choice == "lela_dense"
     show_embedding_model = cand_choice == "lela_dense"
     return (
-        gr.update(visible=show_embedding_model),
         gr.update(visible=show_embedding_model),
         gr.update(visible=show_context),
     )
