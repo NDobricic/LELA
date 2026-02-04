@@ -70,7 +70,7 @@ def get_available_components() -> Dict[str, List[str]]:
     return {
         "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
         "ner": ["simple", "spacy", "gliner", "transformers"],
-        "candidates": ["none", "fuzzy", "bm25", "lela_bm25", "lela_dense"],
+        "candidates": ["none", "fuzzy", "bm25", "lela_dense"],
         "rerankers": ["none", "cross_encoder"],
         "disambiguators": available_disambiguators,
         "knowledge_bases": ["custom"],
@@ -628,7 +628,7 @@ def run_pipeline(
 
     # Build candidate params
     cand_params = {"top_k": cand_top_k}
-    if cand_type in ("lela_bm25", "lela_dense"):
+    if cand_type == "lela_dense":
         cand_params["use_context"] = cand_use_context
     if cand_type == "lela_dense":
         cand_params["model_name"] = cand_embedding_model
@@ -660,11 +660,9 @@ def run_pipeline(
             else {"name": "none", "params": {}}
         )
         disambiguator_config = (
-            (
-                {"name": disambig_type, "params": disambig_params}
-                if disambig_type != "none"
-                else None
-            ),
+            {"name": disambig_type, "params": disambig_params}
+            if disambig_type != "none"
+            else None
         )
 
     config_dict = {
@@ -875,12 +873,10 @@ def update_cand_params(cand_choice: str):
         return (
             gr.update(visible=False),
             gr.update(visible=False),
-            gr.update(visible=False),
         )
-    show_context = cand_choice in ("lela_bm25", "lela_dense")
+    show_context = cand_choice == "lela_dense"
     show_embedding_model = cand_choice == "lela_dense"
     return (
-        gr.update(visible=show_embedding_model),
         gr.update(visible=show_embedding_model),
         gr.update(visible=show_context),
     )
@@ -1472,7 +1468,6 @@ Test files are available in `data/test/`:
 |------|-------------|
 | **fuzzy** | Fuzzy string matching |
 | **bm25** | BM25 text retrieval |
-| **lela_bm25** | Context-aware BM25 |
 | **lela_dense** | Dense embedding retrieval |
 
 ### Rerankers
@@ -1497,7 +1492,6 @@ Test files are available in `data/test/`:
 | Config Name | spaCy Factory |
 |-------------|---------------|
 | simple | ner_pipeline_simple |
-| lela_bm25 | ner_pipeline_lela_bm25_candidates |
 | lela_embedder | ner_pipeline_lela_embedder_reranker |
 | lela_vllm | ner_pipeline_lela_vllm_disambiguator |
 

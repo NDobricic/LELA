@@ -41,7 +41,6 @@ NER_COMPONENT_MAP = {
 }
 
 CANDIDATES_COMPONENT_MAP = {
-    "lela_bm25": "ner_pipeline_lela_bm25_candidates",
     "lela_dense": "ner_pipeline_lela_dense_candidates",
     "fuzzy": "ner_pipeline_fuzzy_candidates",
     "bm25": "ner_pipeline_bm25_candidates",
@@ -459,7 +458,6 @@ class NERPipeline:
             "ner_pipeline_transformers": "NER (Transformers)",
             "ner_pipeline_ner_filter": "NER context extraction",
             "ner": "NER (spaCy)",
-            "ner_pipeline_lela_bm25_candidates": "Candidate generation (BM25)",
             "ner_pipeline_lela_dense_candidates": "Candidate generation (dense)",
             "ner_pipeline_fuzzy_candidates": "Candidate generation (fuzzy)",
             "ner_pipeline_bm25_candidates": "Candidate generation (BM25)",
@@ -486,7 +484,6 @@ class NERPipeline:
     def _is_entity_processing_component(self, component_name: str) -> bool:
         """Check if component processes entities (candidates, reranking, disambiguation)."""
         return component_name in (
-            "ner_pipeline_lela_bm25_candidates",
             "ner_pipeline_lela_dense_candidates",
             "ner_pipeline_fuzzy_candidates",
             "ner_pipeline_bm25_candidates",

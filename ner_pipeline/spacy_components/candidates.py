@@ -2,7 +2,6 @@
 spaCy candidate generation components for the NER pipeline.
 
 Provides factories and components for candidate generation:
-- LELABM25CandidatesComponent: BM25 using bm25s library
 - LELADenseCandidatesComponent: Dense retrieval using embeddings + FAISS
 - FuzzyCandidatesComponent: RapidFuzz string matching
 - BM25CandidatesComponent: Standard rank-bm25 based
@@ -24,31 +23,18 @@ from ner_pipeline.lela.config import (
     DEFAULT_EMBEDDER_MODEL,
     RETRIEVER_TASK,
 )
-from ner_pipeline.lela.llm_pool import get_sentence_transformer_instance, release_sentence_transformer
+from ner_pipeline.lela.llm_pool import (
+    get_sentence_transformer_instance,
+    release_sentence_transformer,
+)
 from ner_pipeline.utils import ensure_candidates_extension
 from ner_pipeline.types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
 # Lazy imports
-_bm25s = None
 _Stemmer = None
 _faiss = None
-
-
-def _get_bm25s():
-    """Lazy import of bm25s."""
-    global _bm25s
-    if _bm25s is None:
-        try:
-            import bm25s
-            _bm25s = bm25s
-        except ImportError:
-            raise ImportError(
-                "bm25s package required for BM25 candidates. "
-                "Install with: pip install 'bm25s[full]'"
-            )
-    return _bm25s
 
 
 def _get_stemmer():
@@ -57,6 +43,7 @@ def _get_stemmer():
     if _Stemmer is None:
         try:
             import Stemmer
+
             _Stemmer = Stemmer
         except ImportError:
             raise ImportError(
@@ -72,6 +59,7 @@ def _get_faiss():
     if _faiss is None:
         try:
             import faiss
+
             _faiss = faiss
         except ImportError:
             raise ImportError(
@@ -82,202 +70,9 @@ def _get_faiss():
 
 
 # ============================================================================
-# LELA BM25 Candidates Component
-# ============================================================================
-
-@Language.factory(
-    "ner_pipeline_lela_bm25_candidates",
-    default_config={
-        "top_k": CANDIDATES_TOP_K,
-        "use_context": True,
-        "stemmer_language": "english",
-    },
-)
-def create_lela_bm25_candidates_component(
-    nlp: Language,
-    name: str,
-    top_k: int,
-    use_context: bool,
-    stemmer_language: str,
-):
-    """Factory for LELA BM25 candidates component."""
-    return LELABM25CandidatesComponent(
-        nlp=nlp,
-        top_k=top_k,
-        use_context=use_context,
-        stemmer_language=stemmer_language,
-    )
-
-
-class LELABM25CandidatesComponent:
-    """
-    BM25 candidate generation component for spaCy.
-
-    Uses bm25s library with Stemmer for efficient BM25 retrieval.
-    Candidates are stored in span._.candidates as List[Candidate].
-    """
-
-    def __init__(
-        self,
-        nlp: Language,
-        top_k: int = CANDIDATES_TOP_K,
-        use_context: bool = True,
-        stemmer_language: str = "english",
-    ):
-        self.nlp = nlp
-        self.top_k = top_k
-        self.use_context = use_context
-        self.stemmer_language = stemmer_language
-
-        ensure_candidates_extension()
-
-        # Initialize lazily - will be built when KB is set
-        self.kb = None
-        self.entities = None
-        self.corpus_records = None
-        self.retriever = None
-        self.stemmer = None
-        self.tokenizer = None
-
-        # Optional progress callback for fine-grained progress reporting
-        self.progress_callback: Optional[ProgressCallback] = None
-
-    def initialize(self, kb: KnowledgeBase, cache_dir: Optional[Path] = None):
-        """Initialize the component with a knowledge base."""
-        if kb is None:
-            raise ValueError("LELA BM25 requires a knowledge base.")
-
-        self.kb = kb
-
-        bm25s = _get_bm25s()
-        Stemmer = _get_stemmer()
-
-        self.entities = list(kb.all_entities())
-        if not self.entities:
-            raise ValueError("Knowledge base is empty.")
-
-        # Try loading from cache
-        cache_hash = None
-        index_dir = None
-        if cache_dir and hasattr(kb, "identity_hash"):
-            raw = f"lela_bm25:{kb.identity_hash}:{self.stemmer_language}".encode()
-            cache_hash = hashlib.sha256(raw).hexdigest()
-            index_dir = Path(cache_dir) / "index" / f"lela_bm25_{cache_hash}"
-            try:
-                bm25s_dir = index_dir / "bm25s"
-                components_file = index_dir / "components.pkl"
-                if bm25s_dir.exists() and components_file.exists():
-                    self.retriever = bm25s.BM25.load(bm25s_dir, load_corpus=True)
-                    with components_file.open("rb") as f:
-                        self.corpus_records = pickle.load(f)
-                    # Recreate stemmer (not picklable due to Cython internals)
-                    self.stemmer = Stemmer.Stemmer(self.stemmer_language)
-                    logger.info(f"Loaded LELA BM25 index from cache ({cache_hash[:12]})")
-                    return
-            except Exception:
-                logger.warning("LELA BM25 cache load failed, will rebuild", exc_info=True)
-
-        # Build corpus - include entity ID for proper resolution
-        self.corpus_records = []
-        corpus_texts = []
-        for entity in self.entities:
-            record = {
-                "id": entity.id,
-                "title": entity.title,
-                "description": entity.description or "",
-            }
-            self.corpus_records.append(record)
-            corpus_texts.append(f"{entity.title} {entity.description or ''}")
-
-        logger.info(f"Building BM25 index over {len(corpus_texts)} entities")
-
-        # Create stemmer and tokenize
-        self.stemmer = Stemmer.Stemmer(self.stemmer_language)
-        self.tokenizer = bm25s.tokenization.Tokenizer(stemmer=self.stemmer)
-        corpus_tokens = self.tokenizer.tokenize(corpus_texts, return_as="tuple")
-
-        # Build index
-        self.retriever = bm25s.BM25(corpus=self.corpus_records, backend="numba")
-        self.retriever.index(corpus_tokens)
-
-        logger.info("BM25 index built successfully")
-
-        # Save to cache (stemmer is not picklable, recreated on load)
-        if index_dir is not None:
-            try:
-                index_dir.mkdir(parents=True, exist_ok=True)
-                self.retriever.save(index_dir / "bm25s")
-                with (index_dir / "components.pkl").open("wb") as f:
-                    pickle.dump(self.corpus_records, f, protocol=pickle.HIGHEST_PROTOCOL)
-                logger.info(f"Saved LELA BM25 index cache ({cache_hash[:12]})")
-            except Exception:
-                logger.warning("Failed to save LELA BM25 cache", exc_info=True)
-
-    def __call__(self, doc: Doc) -> Doc:
-        """Generate candidates for all entities in the document."""
-        if self.retriever is None:
-            logger.warning("BM25 component not initialized - call initialize(kb) first")
-            return doc
-
-        bm25s = _get_bm25s()
-        entities = list(doc.ents)
-        num_entities = len(entities)
-
-        for i, ent in enumerate(entities):
-            # Report progress if callback is set
-            if self.progress_callback and num_entities > 0:
-                progress = i / num_entities
-                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
-            
-            # Build query
-            if self.use_context and hasattr(ent._, "context") and ent._.context:
-                query_text = f"{ent.text} {ent._.context}"
-            else:
-                query_text = ent.text
-
-            # Tokenize query
-            query_tokens = bm25s.tokenize(
-                [query_text],
-                stemmer=self.stemmer,
-                return_ids=False,
-            )
-
-            if not query_tokens[0]:
-                ent._.candidates = []
-                continue
-
-            # Retrieve
-            k = min(self.top_k, len(self.entities))
-            results = self.retriever.retrieve(query_tokens, k=k)
-            candidates_docs = results.documents[0]
-            scores = results.scores[0] if hasattr(results, 'scores') else [0.0] * len(candidates_docs)
-
-            # Store as List[Candidate] with entity ID for proper resolution
-            candidates = []
-            candidate_scores = []
-            for j, record in enumerate(candidates_docs):
-                score = float(scores[j]) if j < len(scores) else 0.0
-                candidates.append(Candidate(
-                    entity_id=record["id"],
-                    score=score,
-                    description=record["description"],
-                ))
-                candidate_scores.append(score)
-
-            ent._.candidates = candidates
-            ent._.candidate_scores = candidate_scores
-            logger.debug(f"Retrieved {len(candidates)} candidates for '{ent.text}'")
-
-        # Clear progress callback after processing
-        self.progress_callback = None
-        
-        return doc
-
-
-# ============================================================================
 # LELA Dense Candidates Component
 # ============================================================================
+
 
 @Language.factory(
     "ner_pipeline_lela_dense_candidates",
@@ -312,7 +107,7 @@ class LELADenseCandidatesComponent:
 
     Uses SentenceTransformers and FAISS for nearest neighbor search.
     Candidates are stored in span._.candidates as List[Candidate].
-    
+
     Memory management: Model is loaded on-demand and released after use,
     allowing it to be evicted if memory is needed for later stages.
     """
@@ -374,18 +169,20 @@ class LELADenseCandidatesComponent:
                     )
                     return
             except Exception:
-                logger.warning("LELA dense cache load failed, will rebuild", exc_info=True)
+                logger.warning(
+                    "LELA dense cache load failed, will rebuild", exc_info=True
+                )
 
         # Build entity texts
-        entity_texts = [
-            f"{e.title} {e.description or ''}" for e in self.entities
-        ]
+        entity_texts = [f"{e.title} {e.description or ''}" for e in self.entities]
 
         logger.info(f"Building dense index over {len(self.entities)} entities")
 
         # Load model for embedding, then release after index is built
         model, _ = get_sentence_transformer_instance(self.model_name, self.device)
-        embeddings = model.encode(entity_texts, normalize_embeddings=True, convert_to_numpy=True)
+        embeddings = model.encode(
+            entity_texts, normalize_embeddings=True, convert_to_numpy=True
+        )
         release_sentence_transformer(self.model_name, self.device)
 
         # Build FAISS index
@@ -418,21 +215,27 @@ class LELADenseCandidatesComponent:
     def __call__(self, doc: Doc) -> Doc:
         """Generate candidates for all entities in the document."""
         if self.index is None:
-            logger.warning("Dense component not initialized - call initialize(kb) first")
+            logger.warning(
+                "Dense component not initialized - call initialize(kb) first"
+            )
             return doc
 
         entities = list(doc.ents)
         num_entities = len(entities)
-        
+
         if num_entities == 0:
             return doc
 
         # Report model loading
         if self.progress_callback:
-            self.progress_callback(0.0, f"Loading embedding model ({self.model_name.split('/')[-1]})...")
+            self.progress_callback(
+                0.0, f"Loading embedding model ({self.model_name.split('/')[-1]})..."
+            )
 
         # Load model for this stage (will reuse cached if available)
-        model, was_cached = get_sentence_transformer_instance(self.model_name, self.device)
+        model, was_cached = get_sentence_transformer_instance(
+            self.model_name, self.device
+        )
 
         if self.progress_callback:
             status = "Using cached model" if was_cached else "Model loaded"
@@ -448,8 +251,11 @@ class LELADenseCandidatesComponent:
                 if self.progress_callback and num_entities > 0:
                     progress = processing_start + (i / num_entities) * processing_range
                     ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                    self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
-                
+                    self.progress_callback(
+                        progress,
+                        f"Generating candidates {i+1}/{num_entities}: {ent_text}",
+                    )
+
                 # Build query
                 context = None
                 if self.use_context and hasattr(ent._, "context"):
@@ -469,29 +275,34 @@ class LELADenseCandidatesComponent:
                 for score, idx in zip(scores[0], indices[0]):
                     entity = self.entities[int(idx)]
                     score_val = float(score)
-                    candidates.append(Candidate(
-                        entity_id=entity.id,
-                        score=score_val,
-                        description=entity.description,
-                    ))
+                    candidates.append(
+                        Candidate(
+                            entity_id=entity.id,
+                            score=score_val,
+                            description=entity.description,
+                        )
+                    )
                     candidate_scores.append(score_val)
 
                 ent._.candidates = candidates
                 ent._.candidate_scores = candidate_scores
-                logger.debug(f"Dense-retrieved {len(candidates)} candidates for '{ent.text}'")
+                logger.debug(
+                    f"Dense-retrieved {len(candidates)} candidates for '{ent.text}'"
+                )
         finally:
             # Release model - stays cached but can be evicted if memory needed
             release_sentence_transformer(self.model_name, self.device)
 
         # Clear progress callback after processing
         self.progress_callback = None
-        
+
         return doc
 
 
 # ============================================================================
 # Fuzzy Candidates Component
 # ============================================================================
+
 
 @Language.factory(
     "ner_pipeline_fuzzy_candidates",
@@ -529,7 +340,7 @@ class FuzzyCandidatesComponent:
         self.kb = None
         self.entities = None
         self.titles = None
-        
+
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
@@ -547,7 +358,9 @@ class FuzzyCandidatesComponent:
     def __call__(self, doc: Doc) -> Doc:
         """Generate candidates for all entities in the document."""
         if self.entities is None:
-            logger.warning("Fuzzy component not initialized - call initialize(kb) first")
+            logger.warning(
+                "Fuzzy component not initialized - call initialize(kb) first"
+            )
             return doc
 
         from rapidfuzz import process, fuzz, utils
@@ -560,7 +373,9 @@ class FuzzyCandidatesComponent:
         use_chunks = num_titles > CHUNK_SIZE
 
         if self.progress_callback:
-            self.progress_callback(0.0, f"Generating candidates for {num_entities} entities...")
+            self.progress_callback(
+                0.0, f"Generating candidates for {num_entities} entities..."
+            )
 
         for i, ent in enumerate(entities):
             ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
@@ -568,7 +383,9 @@ class FuzzyCandidatesComponent:
             # Report progress if callback is set
             if self.progress_callback and num_entities > 0:
                 progress = i / num_entities
-                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
+                self.progress_callback(
+                    progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}"
+                )
 
             if use_chunks:
                 # Process in chunks to allow progress updates during long searches
@@ -578,8 +395,12 @@ class FuzzyCandidatesComponent:
                     chunk_titles = self.titles[chunk_start:chunk_end]
 
                     chunk_results = process.extract(
-                        ent.text, chunk_titles, limit=self.top_k,
-                        scorer=fuzz.WRatio, processor=utils.default_process, score_cutoff=30,
+                        ent.text,
+                        chunk_titles,
+                        limit=self.top_k,
+                        scorer=fuzz.WRatio,
+                        processor=utils.default_process,
+                        score_cutoff=30,
                     )
                     # Remap indices back to global
                     results.extend(
@@ -597,11 +418,15 @@ class FuzzyCandidatesComponent:
 
                 # Keep only top_k across all chunks
                 results.sort(key=lambda x: x[1], reverse=True)
-                results = results[:self.top_k]
+                results = results[: self.top_k]
             else:
                 results = process.extract(
-                    ent.text, self.titles, limit=self.top_k,
-                    scorer=fuzz.WRatio, processor=utils.default_process, score_cutoff=30,
+                    ent.text,
+                    self.titles,
+                    limit=self.top_k,
+                    scorer=fuzz.WRatio,
+                    processor=utils.default_process,
+                    score_cutoff=30,
                 )
 
             # Build candidates as List[Candidate] with entity ID
@@ -611,11 +436,13 @@ class FuzzyCandidatesComponent:
                 entity = self.entities[idx]
                 # Normalize fuzzy score from 0-100 to 0-1
                 score_val = float(score) / 100.0
-                candidates.append(Candidate(
-                    entity_id=entity.id,
-                    score=score_val,
-                    description=entity.description,
-                ))
+                candidates.append(
+                    Candidate(
+                        entity_id=entity.id,
+                        score=score_val,
+                        description=entity.description,
+                    )
+                )
                 candidate_scores.append(score_val)
 
             ent._.candidates = candidates
@@ -624,13 +451,14 @@ class FuzzyCandidatesComponent:
 
         # Clear progress callback after processing
         self.progress_callback = None
-        
+
         return doc
 
 
 # ============================================================================
 # Standard BM25 Candidates Component (using rank-bm25)
 # ============================================================================
+
 
 @Language.factory(
     "ner_pipeline_bm25_candidates",
@@ -669,7 +497,7 @@ class BM25CandidatesComponent:
         self.entities = None
         self.bm25 = None
         self.corpus = None
-        
+
         # Optional progress callback for fine-grained progress reporting
         self.progress_callback: Optional[ProgressCallback] = None
 
@@ -701,10 +529,14 @@ class BM25CandidatesComponent:
                 if cache_file.exists():
                     with cache_file.open("rb") as f:
                         self.bm25, self.corpus = pickle.load(f)
-                    logger.info(f"Loaded rank-bm25 index from cache ({cache_hash[:12]})")
+                    logger.info(
+                        f"Loaded rank-bm25 index from cache ({cache_hash[:12]})"
+                    )
                     return
             except Exception:
-                logger.warning("rank-bm25 cache load failed, will rebuild", exc_info=True)
+                logger.warning(
+                    "rank-bm25 cache load failed, will rebuild", exc_info=True
+                )
 
         # Build corpus
         self.corpus = []
@@ -741,13 +573,15 @@ class BM25CandidatesComponent:
             if self.progress_callback and num_entities > 0:
                 progress = i / num_entities
                 ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                self.progress_callback(progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}")
-            
+                self.progress_callback(
+                    progress, f"Generating candidates {i+1}/{num_entities}: {ent_text}"
+                )
+
             query_tokens = ent.text.lower().split()
             scores = self.bm25.get_scores(query_tokens)
 
             # Get top-k indices
-            top_indices = np.argsort(scores)[::-1][:self.top_k]
+            top_indices = np.argsort(scores)[::-1][: self.top_k]
 
             # Build candidates as List[Candidate] with entity ID
             candidates = []
@@ -755,18 +589,22 @@ class BM25CandidatesComponent:
             for idx in top_indices:
                 entity = self.entities[idx]
                 score_val = float(scores[idx])
-                candidates.append(Candidate(
-                    entity_id=entity.id,
-                    score=score_val,
-                    description=entity.description,
-                ))
+                candidates.append(
+                    Candidate(
+                        entity_id=entity.id,
+                        score=score_val,
+                        description=entity.description,
+                    )
+                )
                 candidate_scores.append(score_val)
 
             ent._.candidates = candidates
             ent._.candidate_scores = candidate_scores
-            logger.debug(f"BM25 retrieved {len(candidates)} candidates for '{ent.text}'")
+            logger.debug(
+                f"BM25 retrieved {len(candidates)} candidates for '{ent.text}'"
+            )
 
         # Clear progress callback after processing
         self.progress_callback = None
-        
+
         return doc
