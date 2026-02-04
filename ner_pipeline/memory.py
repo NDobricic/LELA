@@ -86,7 +86,6 @@ COMPONENT_DEFAULT_MEMORY: Dict[str, float] = {
     # Candidates (CPU-based have 0 GPU memory)
     "fuzzy": 0.0,
     "bm25": 0.0,
-    "lela_bm25": 0.0,
     "lela_dense": 10.0,
     # Rerankers
     "none": 0.0,
@@ -243,7 +242,7 @@ def estimate_component_memory(
     params = params or {}
 
     # CPU-only components
-    if component_name in ("simple", "fuzzy", "bm25", "lela_bm25", "none", "first", "popularity"):
+    if component_name in ("simple", "fuzzy", "bm25", "none", "first", "popularity"):
         return 0.0, None
 
     # SpaCy NER
@@ -316,7 +315,9 @@ def estimate_pipeline_memory(config_dict: Dict) -> MemoryEstimate:
     cand_config = config_dict.get("candidate_generator", {})
     cand_name = cand_config.get("name", "fuzzy")
     cand_params = cand_config.get("params", {})
-    cand_mem, cand_model = estimate_component_memory("candidate_generator", cand_name, cand_params)
+    cand_mem, cand_model = estimate_component_memory(
+        "candidate_generator", cand_name, cand_params
+    )
     component_estimates["candidates"] = cand_mem
     if cand_model:
         # Check if model is shared with another component
@@ -329,7 +330,9 @@ def estimate_pipeline_memory(config_dict: Dict) -> MemoryEstimate:
     reranker_config = config_dict.get("reranker", {})
     reranker_name = reranker_config.get("name", "none")
     reranker_params = reranker_config.get("params", {})
-    reranker_mem, reranker_model = estimate_component_memory("reranker", reranker_name, reranker_params)
+    reranker_mem, reranker_model = estimate_component_memory(
+        "reranker", reranker_name, reranker_params
+    )
     component_estimates["reranker"] = reranker_mem
     if reranker_model:
         if reranker_model in models_used:
@@ -342,11 +345,15 @@ def estimate_pipeline_memory(config_dict: Dict) -> MemoryEstimate:
     if disambig_config:
         disambig_name = disambig_config.get("name", "first")
         disambig_params = disambig_config.get("params", {})
-        disambig_mem, disambig_model = estimate_component_memory("disambiguator", disambig_name, disambig_params)
+        disambig_mem, disambig_model = estimate_component_memory(
+            "disambiguator", disambig_name, disambig_params
+        )
         component_estimates["disambiguator"] = disambig_mem
         if disambig_model:
             if disambig_model in models_used:
-                warnings.append(f"Model '{disambig_model}' is shared - memory counted once")
+                warnings.append(
+                    f"Model '{disambig_model}' is shared - memory counted once"
+                )
             else:
                 models_used[disambig_model] = disambig_mem
     else:
@@ -409,21 +416,26 @@ def check_memory_requirements(
             # Calculate effective available memory considering vLLM's 90% utilization
             # vLLM will try to use 90% of total VRAM, leaving 10% for other models
             # But we load other models first, so they reduce what vLLM can claim
-            
+
             # Check if LLM disambiguator is used
             disambig_config = config_dict.get("disambiguator", {})
             disambig_name = disambig_config.get("name", "") if disambig_config else ""
             uses_vllm = disambig_name in ("lela_vllm", "lela_transformers")
-            
+
             if uses_vllm:
                 # vLLM claims 90% of total VRAM for itself
-                vllm_allocation = resources.gpu_vram_total_gb * VLLM_GPU_MEMORY_UTILIZATION
-                non_llm_memory = estimate.total_vram_gb - estimate.component_estimates.get("disambiguator", 0)
+                vllm_allocation = (
+                    resources.gpu_vram_total_gb * VLLM_GPU_MEMORY_UTILIZATION
+                )
+                non_llm_memory = (
+                    estimate.total_vram_gb
+                    - estimate.component_estimates.get("disambiguator", 0)
+                )
                 llm_memory = estimate.component_estimates.get("disambiguator", 0)
-                
+
                 # Non-LLM models must fit alongside vLLM's allocation
                 available_for_others = resources.gpu_vram_total_gb - vllm_allocation
-                
+
                 if non_llm_memory > available_for_others + 1.0:  # 1GB tolerance
                     can_run = False
                     messages.append(
@@ -507,7 +519,9 @@ def format_memory_estimate_for_ui(
     if resources:
         if resources.gpu_available:
             used_pct = (estimate.total_vram_gb / resources.gpu_vram_total_gb) * 100
-            lines.append(f"**Available:** ~{resources.gpu_vram_free_gb:.1f}GB / {resources.gpu_vram_total_gb:.1f}GB")
+            lines.append(
+                f"**Available:** ~{resources.gpu_vram_free_gb:.1f}GB / {resources.gpu_vram_total_gb:.1f}GB"
+            )
             if used_pct > 90:
                 lines.append("⚠️ **May exceed available memory!**")
             elif used_pct > 70:
