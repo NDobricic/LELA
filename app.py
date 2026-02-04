@@ -25,6 +25,7 @@ from ner_pipeline.lela.config import (
     AVAILABLE_LLM_MODELS as LLM_MODEL_CHOICES,
     AVAILABLE_EMBEDDING_MODELS as EMBEDDING_MODEL_CHOICES,
     AVAILABLE_CROSS_ENCODER_MODELS as CROSS_ENCODER_MODEL_CHOICES,
+    DEFAULT_GLINER_MODEL,
 )
 
 DESCRIPTION = """
@@ -68,7 +69,7 @@ def get_available_components() -> Dict[str, List[str]]:
 
     return {
         "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
-        "ner": ["simple", "spacy", "gliner", "transformers", "lela_gliner"],
+        "ner": ["simple", "spacy", "gliner", "transformers"],
         "candidates": ["fuzzy", "bm25", "lela_bm25", "lela_dense"],
         "rerankers": ["none", "cross_encoder"],
         "disambiguators": available_disambiguators,
@@ -617,7 +618,7 @@ def run_pipeline(
     ner_params = {}
     if ner_type == "spacy":
         ner_params["model"] = spacy_model
-    elif ner_type in ("gliner", "lela_gliner"):
+    elif ner_type == "gliner":
         ner_params["model_name"] = gliner_model
         ner_params["threshold"] = gliner_threshold
         if gliner_labels:
@@ -847,7 +848,7 @@ def update_ner_params(ner_choice: str):
     """Show/hide NER-specific parameters based on selection."""
     return {
         spacy_params: gr.update(visible=(ner_choice == "spacy")),
-        gliner_params: gr.update(visible=(ner_choice in ("gliner", "lela_gliner"))),
+        gliner_params: gr.update(visible=(ner_choice == "gliner")),
         simple_params: gr.update(visible=(ner_choice == "simple")),
     }
 
@@ -1285,7 +1286,7 @@ if __name__ == "__main__":
                         with gr.Group(visible=False) as gliner_params:
                             gliner_model = gr.Textbox(
                                 label="GLiNER Model",
-                                value="urchade/gliner_large",
+                                value=DEFAULT_GLINER_MODEL,
                             )
                             gliner_labels = gr.Textbox(
                                 label="Labels (comma-sep)",
@@ -1439,7 +1440,6 @@ Test files are available in `data/test/`:
 | **simple** | Regex-based extraction of capitalized phrases |
 | **spacy** | SpaCy NER models (requires download) |
 | **gliner** | GLiNER zero-shot NER with custom labels |
-| **lela_gliner** | LELA-optimized GLiNER |
 
 ### Candidate Generators
 | Name | Description |
@@ -1471,7 +1471,6 @@ Test files are available in `data/test/`:
 | Config Name | spaCy Factory |
 |-------------|---------------|
 | simple | ner_pipeline_simple |
-| lela_gliner | ner_pipeline_lela_gliner |
 | lela_bm25 | ner_pipeline_lela_bm25_candidates |
 | lela_embedder | ner_pipeline_lela_embedder_reranker |
 | lela_vllm | ner_pipeline_lela_vllm_disambiguator |

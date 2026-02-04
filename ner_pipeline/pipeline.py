@@ -34,7 +34,6 @@ from .types import Candidate, Document, ProgressCallback
 
 # Component name mapping from config names to spaCy factory names
 NER_COMPONENT_MAP = {
-    "lela_gliner": "ner_pipeline_lela_gliner",
     "simple": "ner_pipeline_simple",
     "gliner": "ner_pipeline_gliner",
     "transformers": "ner_pipeline_transformers",
@@ -451,7 +450,6 @@ class NERPipeline:
     def _get_stage_description(self, component_name: str) -> str:
         """Get human-readable description for a component name."""
         descriptions = {
-            "ner_pipeline_lela_gliner": "NER (GLiNER)",
             "ner_pipeline_simple": "NER (regex)",
             "ner_pipeline_gliner": "NER (GLiNER)",
             "ner_pipeline_transformers": "NER (Transformers)",
@@ -474,7 +472,6 @@ class NERPipeline:
     def _is_ner_component(self, component_name: str) -> bool:
         """Check if component is a NER component."""
         return component_name in (
-            "ner_pipeline_lela_gliner",
             "ner_pipeline_simple",
             "ner_pipeline_gliner",
             "ner_pipeline_transformers",
