@@ -49,6 +49,7 @@ CANDIDATES_COMPONENT_MAP = {
 RERANKER_COMPONENT_MAP = {
     "lela_embedder": "ner_pipeline_lela_embedder_reranker",
     "cross_encoder": "ner_pipeline_cross_encoder_reranker",
+    "vllm_api_client": "ner_pipeline_vllm_api_client_reranker",
     "none": "ner_pipeline_noop_reranker",
 }
 

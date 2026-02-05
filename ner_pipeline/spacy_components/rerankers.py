@@ -7,6 +7,7 @@ Provides factories and components for candidate reranking:
 """
 
 import logging
+import requests
 from typing import List, Optional
 
 import numpy as np
@@ -91,7 +92,7 @@ class CrossEncoderRerankerComponent:
         logger.info(f"Cross-encoder reranker initialized: {model_name}")
 
     def _format_query(self, text: str, start: int, end: int) -> str:
-        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n'
         marked_text = (
             f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
         )
@@ -161,6 +162,127 @@ class CrossEncoderRerankerComponent:
         # Clear progress callback after processing
         self.progress_callback = None
 
+        return doc
+
+
+# ============================================================================
+# vLLM API Client Reranker Component
+# ============================================================================
+
+
+@Language.factory(
+    "ner_pipeline_vllm_api_client_reranker",
+    default_config={
+        "model_name": "Qwen/Qwen3-Reranker-4B-seq-cls",
+        "top_k": 10,
+        "base_url": "http://localhost",
+        "port": 8000,
+    },
+)
+def create_vllm_api_client_reranker_component(
+    nlp: Language,
+    name: str,
+    model_name: str,
+    top_k: int,
+    base_url: str,
+    port: int,
+):
+    """Factory for vLLM API client reranker component."""
+    return VLLMAPIClientReranker(
+        nlp=nlp,
+        model_name=model_name,
+        top_k=top_k,
+        base_url=base_url,
+        port=port,
+    )
+
+
+class VLLMAPIClientReranker:
+    PREFIX = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n'
+    SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    QUERY_TEMPLATE = "{prefix}<Instruct>: {instruction}\n<Query>: {query}\n"
+    DOCUMENT_TEMPLATE = "<Document>: {doc}{suffix}"
+
+    def __init__(
+        self,
+        nlp: Language,
+        model_name: str,
+        top_k: int = 10,
+        base_url: str = "http://localhost",
+        port: int = 8000,
+    ):
+        self.nlp = nlp
+        self.model_name = model_name
+        self.top_k = top_k
+        self.api_url = f"{base_url}:{port}/score"
+        ensure_candidates_extension()
+        logger.info(
+            f"Using vLLM API reranker for model '{self.model_name}' at {self.api_url}"
+        )
+
+    @staticmethod
+    def post_http_request(prompt: dict, api_url: str) -> requests.Response:
+        headers = {"User-Agent": "Test Client"}
+        response = requests.post(api_url, headers=headers, json=prompt)
+        response.raise_for_status()
+        return response
+
+    def __call__(self, doc: Doc) -> Doc:
+        for ent in doc.ents:
+            candidates = getattr(ent._, "candidates", [])
+            if not candidates:
+                continue
+
+            query = f"{doc.text[: ent.start_char]}{SPAN_OPEN}{ent.text}{SPAN_CLOSE}{doc.text[ent.end_char:]}"
+            query = self.QUERY_TEMPLATE.format(
+                prefix=self.PREFIX, instruction=RERANKER_TASK, query=query
+            )
+
+            documents = [f"{c.entity_id} ({c.description or ''})" for c in candidates]
+            documents = [
+                self.DOCUMENT_TEMPLATE.format(doc=d, suffix=self.SUFFIX)
+                for d in documents
+            ]
+
+            try:
+                response = self.post_http_request(
+                    prompt={
+                        "model": self.model_name,
+                        "text_1": query,
+                        "text_2": documents,
+                    },
+                    api_url=self.api_url,
+                ).json()
+
+                if "data" not in response:
+                    logger.error(
+                        f"Reranker API response does not contain 'data' field: {response} for query: {query}"
+                    )
+                    # Keep original candidates if API fails
+                    ent._.candidates = candidates[: self.top_k]
+                    ent._.candidate_scores = [
+                        c.score for c in candidates[: self.top_k]
+                    ]
+                    continue
+
+                scores = [d["score"] for d in response["data"]]
+                scored_candidates = list(zip(candidates, scores))
+                scored_candidates.sort(key=lambda x: x[1], reverse=True)
+                top_candidates = scored_candidates[: self.top_k]
+
+                reranked_candidates = [c for c, s in top_candidates]
+                reranked_scores = [s for c, s in top_candidates]
+
+                ent._.candidates = reranked_candidates
+                ent._.candidate_scores = reranked_scores
+
+            except (requests.exceptions.RequestException, ValueError) as e:
+                logger.error(
+                    f"Reranker API request failed for entity '{ent.text}': {e}"
+                )
+                # Keep original candidates on failure
+                ent._.candidates = candidates[: self.top_k]
+                ent._.candidate_scores = [c.score for c in candidates[: self.top_k]]
         return doc
 
 

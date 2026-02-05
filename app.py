@@ -71,7 +71,7 @@ def get_available_components() -> Dict[str, List[str]]:
         "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
         "ner": ["simple", "spacy", "gliner", "transformers"],
         "candidates": ["none", "fuzzy", "bm25", "lela_dense"],
-        "rerankers": ["none", "cross_encoder"],
+        "rerankers": ["none", "cross_encoder", "vllm_api_client"],
         "disambiguators": available_disambiguators,
         "knowledge_bases": ["custom"],
     }
@@ -558,6 +558,8 @@ def run_pipeline(
     reranker_type: str,
     reranker_embedding_model: str,
     reranker_cross_encoder_model: str,
+    reranker_api_url: str,
+    reranker_api_port: int,
     reranker_top_k: int,
     disambig_type: str,
     llm_model: str,
@@ -639,6 +641,10 @@ def run_pipeline(
         reranker_params["model_name"] = reranker_embedding_model
     if reranker_type == "cross_encoder":
         reranker_params["model_name"] = reranker_cross_encoder_model
+    if reranker_type == "vllm_api_client":
+        reranker_params["model_name"] = reranker_cross_encoder_model
+        reranker_params["base_url"] = reranker_api_url
+        reranker_params["port"] = reranker_api_port
 
     # Build disambiguator params
     disambig_params = {}
@@ -886,8 +892,11 @@ def update_reranker_params(reranker_choice: str):
     """Show/hide reranker-specific parameters based on selection."""
     show_cross_encoder_model = reranker_choice == "cross_encoder"
     show_embedding_model = reranker_choice == "lela_embedder"
-    return gr.update(visible=show_cross_encoder_model), gr.update(
-        visible=show_embedding_model
+    show_vllm_api_client = reranker_choice == "vllm_api_client"
+    return (
+        gr.update(visible=show_cross_encoder_model),
+        gr.update(visible=show_embedding_model),
+        gr.update(visible=show_vllm_api_client),
     )
 
 
@@ -1388,6 +1397,15 @@ if __name__ == "__main__":
                             label="Embedding Model",
                             visible=False,
                         )
+                        with gr.Group(visible=False) as vllm_api_client_params:
+                            reranker_api_url = gr.Textbox(
+                                label="Reranker API URL",
+                                value="http://localhost",
+                            )
+                            reranker_api_port = gr.Number(
+                                label="Reranker API Port",
+                                value=8000,
+                            )
                         reranker_top_k = gr.Slider(
                             minimum=1,
                             maximum=20,
@@ -1544,7 +1562,11 @@ Test files are available in `data/test/`:
         reranker_type.change(
             fn=update_reranker_params,
             inputs=[reranker_type],
-            outputs=[reranker_cross_encoder_model, reranker_embedding_model],
+            outputs=[
+                reranker_cross_encoder_model,
+                reranker_embedding_model,
+                vllm_api_client_params,
+            ],
         )
 
         disambig_type.change(
@@ -1612,6 +1634,8 @@ Test files are available in `data/test/`:
                     reranker_type,
                     reranker_embedding_model,
                     reranker_cross_encoder_model,
+                    reranker_api_url,
+                    reranker_api_port,
                     reranker_top_k,
                     disambig_type,
                     llm_model,
