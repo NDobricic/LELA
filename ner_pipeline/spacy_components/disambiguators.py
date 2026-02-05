@@ -133,7 +133,7 @@ class LELAvLLMDisambiguatorComponent:
         max_model_len: Optional[int] = DEFAULT_MAX_MODEL_LEN,
         add_none_candidate: bool = False,
         add_descriptions: bool = True,
-        disable_thinking: bool = True,  # Default True for faster responses
+        disable_thinking: bool = False,
         system_prompt: Optional[str] = None,
         generation_config: Optional[dict] = None,
         self_consistency_k: int = 1,
@@ -608,7 +608,7 @@ class LELATransformersDisambiguatorComponent:
                     outputs = self.model.generate(
                         **inputs,
                         max_new_tokens=self.generation_config.get("max_tokens", 2048),
-                        temperature=self.generation_config.get("temperature", None),
+                        temperature=self.generation_config.get("temperature"),
                         do_sample=True,
                         pad_token_id=self.tokenizer.eos_token_id,
                     )
