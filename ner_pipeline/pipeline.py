@@ -42,6 +42,7 @@ CANDIDATES_COMPONENT_MAP = {
     "lela_dense": "ner_pipeline_lela_dense_candidates",
     "fuzzy": "ner_pipeline_fuzzy_candidates",
     "bm25": "ner_pipeline_bm25_candidates",
+    "lela_openai_api_dense": "ner_pipeline_lela_openai_api_dense_candidates",
 }
 
 RERANKER_COMPONENT_MAP = {
@@ -435,6 +436,7 @@ class NERPipeline:
             "ner_pipeline_ner_filter": "NER context extraction",
             "ner": "NER (spaCy)",
             "ner_pipeline_lela_dense_candidates": "Candidate generation (dense)",
+            "ner_pipeline_lela_openai_api_dense_candidates": "Candidate generation (OpenAI API)",
             "ner_pipeline_fuzzy_candidates": "Candidate generation (fuzzy)",
             "ner_pipeline_bm25_candidates": "Candidate generation (BM25)",
             "ner_pipeline_lela_embedder_reranker": "Reranking (embedder)",
@@ -461,6 +463,7 @@ class NERPipeline:
         """Check if component processes entities (candidates, reranking, disambiguation)."""
         return component_name in (
             "ner_pipeline_lela_dense_candidates",
+            "ner_pipeline_lela_openai_api_dense_candidates",
             "ner_pipeline_fuzzy_candidates",
             "ner_pipeline_bm25_candidates",
             "ner_pipeline_lela_embedder_reranker",
