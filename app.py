@@ -70,7 +70,7 @@ def get_available_components() -> Dict[str, List[str]]:
     return {
         "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
         "ner": ["simple", "spacy", "gliner"],
-        "candidates": ["none", "fuzzy", "bm25", "lela_dense"],
+        "candidates": ["none", "fuzzy", "bm25", "lela_dense", "lela_openai_api_dense"],
         "rerankers": ["none", "cross_encoder", "vllm_api_client"],
         "disambiguators": available_disambiguators,
         "knowledge_bases": ["custom"],
@@ -479,6 +479,8 @@ def run_pipeline(
     cand_embedding_model: str,
     cand_top_k: int,
     cand_use_context: bool,
+    cand_api_base_url: str,
+    cand_api_key: str,
     reranker_type: str,
     reranker_embedding_model: str,
     reranker_cross_encoder_model: str,
@@ -558,8 +560,12 @@ def run_pipeline(
     cand_params = {"top_k": cand_top_k}
     if cand_type == "lela_dense":
         cand_params["use_context"] = cand_use_context
-    if cand_type == "lela_dense":
         cand_params["model_name"] = cand_embedding_model
+    elif cand_type == "lela_openai_api_dense":
+        cand_params["use_context"] = cand_use_context
+        cand_params["model_name"] = cand_embedding_model
+        cand_params["base_url"] = cand_api_base_url
+        cand_params["api_key"] = cand_api_key
 
     # Build reranker params
     reranker_params = {"top_k": reranker_top_k}
@@ -808,12 +814,16 @@ def update_cand_params(cand_choice: str):
         return (
             gr.update(visible=False),
             gr.update(visible=False),
+            gr.update(visible=False),
         )
-    show_context = cand_choice == "lela_dense"
-    show_embedding_model = cand_choice == "lela_dense"
+    show_context = cand_choice in ("lela_dense", "lela_openai_api_dense")
+    show_embedding_model = cand_choice in ("lela_dense", "lela_openai_api_dense")
+    show_openai_api_dense_params = cand_choice == "lela_openai_api_dense"
+
     return (
         gr.update(visible=show_embedding_model),
         gr.update(visible=show_context),
+        gr.update(visible=show_openai_api_dense_params),
     )
 
 
@@ -1196,6 +1206,16 @@ if __name__ == "__main__":
                             label="Embedding Model",
                             visible=False,
                         )
+                        with gr.Group(visible=False) as lela_openai_api_dense_cand_params:
+                            cand_api_base_url = gr.Textbox(
+                                label="Cand. OpenAI API Base URL",
+                                value="http://localhost:8001/v1",
+                            )
+                            cand_api_key = gr.Textbox(
+                                label="Cand. OpenAI API Key",
+                                value="",
+                                type="password",
+                            )
                         cand_top_k = gr.Slider(
                             minimum=1,
                             maximum=100,
@@ -1406,7 +1426,11 @@ Test files are available in `data/test/`:
         cand_type.change(
             fn=update_cand_params,
             inputs=[cand_type],
-            outputs=[cand_embedding_model, cand_use_context],
+            outputs=[
+                cand_embedding_model,
+                cand_use_context,
+                lela_openai_api_dense_cand_params,
+            ],
         )
 
         reranker_type.change(
@@ -1480,6 +1504,8 @@ Test files are available in `data/test/`:
                     cand_embedding_model,
                     cand_top_k,
                     cand_use_context,
+                    cand_api_base_url,
+                    cand_api_key,
                     reranker_type,
                     reranker_embedding_model,
                     reranker_cross_encoder_model,
