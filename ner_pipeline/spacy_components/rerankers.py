@@ -92,7 +92,7 @@ class CrossEncoderRerankerComponent:
         logger.info(f"Cross-encoder reranker initialized: {model_name}")
 
     def _format_query(self, text: str, start: int, end: int) -> str:
-        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n'
+        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
         marked_text = (
             f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
         )
@@ -198,7 +198,7 @@ def create_vllm_api_client_reranker_component(
 
 
 class VLLMAPIClientReranker:
-    PREFIX = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n'
+    PREFIX = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
     SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
     QUERY_TEMPLATE = "{prefix}<Instruct>: {instruction}\n<Query>: {query}\n"
     DOCUMENT_TEMPLATE = "<Document>: {doc}{suffix}"
@@ -260,9 +260,7 @@ class VLLMAPIClientReranker:
                     )
                     # Keep original candidates if API fails
                     ent._.candidates = candidates[: self.top_k]
-                    ent._.candidate_scores = [
-                        c.score for c in candidates[: self.top_k]
-                    ]
+                    ent._.candidate_scores = [c.score for c in candidates[: self.top_k]]
                     continue
 
                 scores = [d["score"] for d in response["data"]]
@@ -322,4 +320,145 @@ class NoOpRerankerComponent:
             candidates = getattr(ent._, "candidates", [])
             if candidates and len(candidates) > self.top_k:
                 ent._.candidates = candidates[: self.top_k]
+        return doc
+
+
+# ============================================================================
+# Llama Server Reranker Component
+# ============================================================================
+
+
+@Language.factory(
+    "ner_pipeline_llama_server_reranker",
+    default_config={
+        "model_name": "qwen3-reranker",
+        "top_k": 10,
+        "base_url": "http://localhost",
+        "port": 8002,
+    },
+)
+def create_llama_server_reranker_component(
+    nlp: Language,
+    name: str,
+    model_name: str,
+    top_k: int,
+    base_url: str,
+    port: int,
+):
+    """Factory for Llama Server reranker component."""
+    return LlamaServerReranker(
+        nlp=nlp,
+        model_name=model_name,
+        top_k=top_k,
+        base_url=base_url,
+        port=port,
+    )
+
+
+class LlamaServerReranker:
+    """
+    Reranker component that uses a llama.cpp server compatible with the
+    OpenAI-style rerank endpoint.
+    """
+
+    def __init__(
+        self,
+        nlp: Language,
+        model_name: str,
+        top_k: int = 10,
+        base_url: str = "http://localhost",
+        port: int = 8002,
+    ):
+        self.nlp = nlp
+        self.model_name = model_name
+        self.top_k = top_k
+        self.api_url = f"{base_url}:{port}/v1/rerank"
+        ensure_candidates_extension()
+        logger.info(
+            f"Using Llama Server reranker for model '{self.model_name}' at {self.api_url}"
+        )
+        self.progress_callback: Optional[ProgressCallback] = None
+
+    @staticmethod
+    def post_http_request(payload: dict, api_url: str) -> requests.Response:
+        headers = {"User-Agent": "LELA Client", "Content-Type": "application/json"}
+        response = requests.post(api_url, headers=headers, json=payload)
+        response.raise_for_status()
+        return response
+
+    def __call__(self, doc: Doc) -> Doc:
+        entities = list(doc.ents)
+        num_entities = len(entities)
+
+        for i, ent in enumerate(entities):
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(
+                    progress, f"Reranking {i+1}/{num_entities}: {ent_text}"
+                )
+
+            candidates = getattr(ent._, "candidates", [])
+            if not candidates:
+                continue
+
+            query_text = ent.text
+            document_texts = [
+                f"{c.entity_id} ({c.description or ''})" for c in candidates
+            ]
+
+            try:
+                response = self.post_http_request(
+                    payload={
+                        "model": self.model_name,
+                        "query": query_text,
+                        "documents": document_texts,
+                        "top_n": self.top_k,
+                    },
+                    api_url=self.api_url,
+                ).json()
+
+                if "results" not in response:
+                    logger.error(
+                        f"Reranker API response does not contain 'results' field: {response} for query: {query_text}"
+                    )
+                    # Keep original candidates if API fails
+                    ent._.candidates = candidates[: self.top_k]
+                    ent._.candidate_scores = [c.score for c in candidates[: self.top_k]]
+                    continue
+
+                results = response["results"]
+
+                reranked_candidates = []
+                reranked_scores = []
+
+                for result in results:
+                    original_index = result.get("index")
+                    score = result.get("relevance_score")
+
+                    if original_index is None or score is None:
+                        continue
+
+                    if 0 <= original_index < len(candidates):
+                        candidate = candidates[original_index]
+                        reranked_candidates.append(
+                            Candidate(
+                                entity_id=candidate.entity_id,
+                                score=float(score),
+                                description=candidate.description,
+                            )
+                        )
+                        reranked_scores.append(float(score))
+
+                ent._.candidates = reranked_candidates
+                ent._.candidate_scores = reranked_scores
+
+            except (requests.exceptions.RequestException, ValueError) as e:
+                logger.error(
+                    f"Llama Server Reranker API request failed for entity '{ent.text}': {e}"
+                )
+                # Keep original candidates on failure
+                ent._.candidates = candidates[: self.top_k]
+                ent._.candidate_scores = [c.score for c in candidates[: self.top_k]]
+        self.progress_callback = None
         return doc
