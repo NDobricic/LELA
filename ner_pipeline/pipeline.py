@@ -49,6 +49,7 @@ RERANKER_COMPONENT_MAP = {
     "lela_embedder": "ner_pipeline_lela_embedder_reranker",
     "cross_encoder": "ner_pipeline_cross_encoder_reranker",
     "vllm_api_client": "ner_pipeline_vllm_api_client_reranker",
+    "llama_server": "ner_pipeline_llama_server_reranker",
     "none": "ner_pipeline_noop_reranker",
 }
 
@@ -441,6 +442,8 @@ class NERPipeline:
             "ner_pipeline_bm25_candidates": "Candidate generation (BM25)",
             "ner_pipeline_lela_embedder_reranker": "Reranking (embedder)",
             "ner_pipeline_cross_encoder_reranker": "Reranking (cross-encoder)",
+            "ner_pipeline_vllm_api_client_reranker": "Reranking (vLLM API)",
+            "ner_pipeline_llama_server_reranker": "Reranking (Llama Server)",
             "ner_pipeline_noop_reranker": "Reranking (pass-through)",
             "ner_pipeline_lela_vllm_disambiguator": "Disambiguation (LLM)",
             "ner_pipeline_lela_transformers_disambiguator": "Disambiguation (LLM)",
@@ -468,6 +471,8 @@ class NERPipeline:
             "ner_pipeline_bm25_candidates",
             "ner_pipeline_lela_embedder_reranker",
             "ner_pipeline_cross_encoder_reranker",
+            "ner_pipeline_vllm_api_client_reranker",
+            "ner_pipeline_llama_server_reranker",
             "ner_pipeline_lela_vllm_disambiguator",
             "ner_pipeline_lela_transformers_disambiguator",
             "ner_pipeline_lela_openai_api_disambiguator",

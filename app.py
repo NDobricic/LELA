@@ -71,7 +71,7 @@ def get_available_components() -> Dict[str, List[str]]:
         "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
         "ner": ["simple", "spacy", "gliner"],
         "candidates": ["none", "fuzzy", "bm25", "lela_dense", "lela_openai_api_dense"],
-        "rerankers": ["none", "cross_encoder", "vllm_api_client"],
+        "rerankers": ["none", "cross_encoder", "vllm_api_client", "llama_server"],
         "disambiguators": available_disambiguators,
         "knowledge_bases": ["custom"],
     }
@@ -831,7 +831,7 @@ def update_reranker_params(reranker_choice: str):
     """Show/hide reranker-specific parameters based on selection."""
     show_cross_encoder_model = reranker_choice == "cross_encoder"
     show_embedding_model = reranker_choice == "lela_embedder"
-    show_vllm_api_client = reranker_choice == "vllm_api_client"
+    show_vllm_api_client = reranker_choice in ("vllm_api_client", "llama_server")
     return (
         gr.update(visible=show_cross_encoder_model),
         gr.update(visible=show_embedding_model),
