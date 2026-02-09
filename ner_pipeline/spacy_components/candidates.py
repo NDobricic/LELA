@@ -371,7 +371,7 @@ class LELAOpenAIAPIDenseCandidatesComponent:
         api_key: Optional[str] = None,
         top_k: int = CANDIDATES_TOP_K,
         use_context: bool = False,
-        batch_size: int = 64,
+        batch_size: int = 128,
     ):
         self.nlp = nlp
         self.model_name = model_name
@@ -523,7 +523,9 @@ class LELAOpenAIAPIDenseCandidatesComponent:
 
             data = response.get("data", [])
             if not isinstance(data, list) or not data:
-                raise RuntimeError(f"OpenAI API embeddings response invalid: {response}")
+                raise RuntimeError(
+                    f"OpenAI API embeddings response invalid: {response}"
+                )
 
             # Restore original order by index if present
             batch_embeddings = [None] * len(batch)
