@@ -31,8 +31,7 @@ from el_pipeline.lela.config import (
 DESCRIPTION = """
 # EL Pipeline 🔗
 
-Modular NER → candidate generation → rerank → disambiguation pipeline built on spaCy.
-Swap components, configure parameters, and test with your own knowledge bases.
+*Modular entity recognition and linking pipeline. Upload a knowledge base, enter text, configure the pipeline, and run.*"
 
 ## Links
 - [Repository](https://github.com/samyhaff/LELA)
@@ -1075,7 +1074,7 @@ if __name__ == "__main__":
     with gr.Blocks(title="EL Pipeline", fill_height=True, head=custom_head) as demo:
         gr.Markdown("# EL Pipeline", elem_classes=["main-header"])
         gr.Markdown(
-            "*Modular entity recognition and linking pipeline. Upload a knowledge base, enter text, configure the pipeline, and run.*",
+            DESCRIPTION,
             elem_classes=["subtitle"],
         )
 
