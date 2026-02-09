@@ -219,6 +219,7 @@ class VLLMAPIClientReranker:
         logger.info(
             f"Using vLLM API reranker for model '{self.model_name}' at {self.api_url}"
         )
+        self.progress_callback: Optional[ProgressCallback] = None
 
     @staticmethod
     def post_http_request(prompt: dict, api_url: str) -> requests.Response:
@@ -228,7 +229,17 @@ class VLLMAPIClientReranker:
         return response
 
     def __call__(self, doc: Doc) -> Doc:
-        for ent in doc.ents:
+        entities = list(doc.ents)
+        num_entities = len(entities)
+
+        for i, ent in enumerate(entities):
+            if self.progress_callback and num_entities > 0:
+                progress = i / num_entities
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                self.progress_callback(
+                    progress, f"Reranking {i+1}/{num_entities}: {ent_text}"
+                )
+
             candidates = getattr(ent._, "candidates", [])
             if not candidates:
                 continue
@@ -281,6 +292,7 @@ class VLLMAPIClientReranker:
                 # Keep original candidates on failure
                 ent._.candidates = candidates[: self.top_k]
                 ent._.candidate_scores = [c.score for c in candidates[: self.top_k]]
+        self.progress_callback = None
         return doc
 
 
@@ -334,7 +346,7 @@ class NoOpRerankerComponent:
         "model_name": "qwen3-reranker",
         "top_k": 10,
         "base_url": "http://localhost",
-        "port": 8002,
+        "port": 8000,
     },
 )
 def create_llama_server_reranker_component(
@@ -367,7 +379,7 @@ class LlamaServerReranker:
         model_name: str,
         top_k: int = 10,
         base_url: str = "http://localhost",
-        port: int = 8002,
+        port: int = 8000,
     ):
         self.nlp = nlp
         self.model_name = model_name

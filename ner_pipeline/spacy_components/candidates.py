@@ -324,7 +324,7 @@ class LELADenseCandidatesComponent:
     "ner_pipeline_lela_openai_api_dense_candidates",
     default_config={
         "model_name": None,
-        "base_url": "http://localhost:8001/v1",
+        "base_url": "http://localhost:8000/v1",
         "api_key": None,
         "top_k": CANDIDATES_TOP_K,
         "use_context": False,
@@ -367,7 +367,7 @@ class LELAOpenAIAPIDenseCandidatesComponent:
         self,
         nlp: Language,
         model_name: Optional[str] = None,
-        base_url: str = "http://localhost:8001/v1",
+        base_url: str = "http://localhost:8000/v1",
         api_key: Optional[str] = None,
         top_k: int = CANDIDATES_TOP_K,
         use_context: bool = False,
