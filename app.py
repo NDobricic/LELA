@@ -84,7 +84,15 @@ def get_available_components() -> Dict[str, List[str]]:
         "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
         "ner": ["simple", "spacy", "gliner"],
         "candidates": ["none", "fuzzy", "bm25", "lela_dense", "lela_openai_api_dense"],
-        "rerankers": ["none", "cross_encoder", "vllm_api_client", "llama_server", "lela_embedder_transformers", "lela_embedder_vllm", "lela_cross_encoder_vllm"],
+        "rerankers": [
+            "none",
+            "cross_encoder",
+            "vllm_api_client",
+            "llama_server",
+            "lela_embedder_transformers",
+            "lela_embedder_vllm",
+            "lela_cross_encoder_vllm",
+        ],
         "disambiguators": available_disambiguators,
         "knowledge_bases": ["custom"],
     }
@@ -485,6 +493,7 @@ def _run_with_heartbeat(fn, progress_fn, initial_progress, initial_desc):
     Returns fn's return value.  Re-raises any exception from fn.
     """
     import queue as _q
+
     q = _q.Queue()
     result_holder = []
     error_holder = []
@@ -591,7 +600,9 @@ def run_pipeline(
 
         kb_path = _run_with_heartbeat(
             lambda report: ensure_yago_kb(),
-            progress, 0.05, "Resolving knowledge base...",
+            progress,
+            0.05,
+            "Resolving knowledge base...",
         )
     else:
         kb_path = kb_file.name
@@ -707,10 +718,18 @@ def run_pipeline(
                 report(0.15 + local_progress * 0.2, description)
                 if _cancel_event.is_set():
                     raise InterruptedError("Pipeline cancelled by user")
-            return ELPipeline(config, progress_callback=init_progress_callback, cancel_event=_cancel_event)
+
+            return ELPipeline(
+                config,
+                progress_callback=init_progress_callback,
+                cancel_event=_cancel_event,
+            )
 
         pipeline = _run_with_heartbeat(
-            _init_pipeline, progress, 0.15, "Initializing pipeline...",
+            _init_pipeline,
+            progress,
+            0.15,
+            "Initializing pipeline...",
         )
     except InterruptedError:
         logger.info("Pipeline cancelled during initialization")
@@ -746,7 +765,9 @@ def run_pipeline(
         # Load document (in background thread to keep SSE alive for large files)
         docs = _run_with_heartbeat(
             lambda report: list(pipeline.loader.load(input_path)),
-            progress, 0.4, "Loading document...",
+            progress,
+            0.4,
+            "Loading document...",
         )
 
         if not file_input:
@@ -778,6 +799,7 @@ def run_pipeline(
                 report(0.45 + local_progress * 0.4, description)
                 if _cancel_event.is_set():
                     raise InterruptedError("Pipeline cancelled by user")
+
             return pipeline.process_document_with_progress(
                 doc,
                 progress_callback=progress_callback,
@@ -786,7 +808,10 @@ def run_pipeline(
             )
 
         result = _run_with_heartbeat(
-            _run_processing, progress, 0.45, "Processing document...",
+            _run_processing,
+            progress,
+            0.45,
+            "Processing document...",
         )
 
     except InterruptedError:
@@ -869,8 +894,14 @@ def update_cand_params(cand_choice: str):
 
 def update_reranker_params(reranker_choice: str):
     """Show/hide reranker-specific parameters based on selection."""
-    show_cross_encoder_model = reranker_choice in ("cross_encoder", "lela_cross_encoder_vllm")
-    show_embedding_model = reranker_choice in ("lela_embedder_transformers", "lela_embedder_vllm")
+    show_cross_encoder_model = reranker_choice in (
+        "cross_encoder",
+        "lela_cross_encoder_vllm",
+    )
+    show_embedding_model = reranker_choice in (
+        "lela_embedder_transformers",
+        "lela_embedder_vllm",
+    )
     show_vllm_api_client = reranker_choice in ("vllm_api_client", "llama_server")
     # Use different model lists for vLLM vs transformers cross-encoder
     if reranker_choice == "lela_cross_encoder_vllm":
@@ -880,7 +911,9 @@ def update_reranker_params(reranker_choice: str):
         ce_choices = [(m[1], m[0]) for m in CROSS_ENCODER_MODEL_CHOICES]
         ce_default = "tomaarsen/Qwen3-Reranker-4B-seq-cls"
     return (
-        gr.update(visible=show_cross_encoder_model, choices=ce_choices, value=ce_default),
+        gr.update(
+            visible=show_cross_encoder_model, choices=ce_choices, value=ce_default
+        ),
         gr.update(visible=show_embedding_model),
         gr.update(visible=show_vllm_api_client),
     )
@@ -1255,7 +1288,7 @@ if __name__ == "__main__":
                         ) as lela_openai_api_dense_cand_params:
                             cand_api_base_url = gr.Textbox(
                                 label="Cand. OpenAI API Base URL",
-                                value="http://localhost:8001/v1",
+                                value="http://localhost:8000/v1",
                             )
                             cand_api_key = gr.Textbox(
                                 label="Cand. OpenAI API Key",
