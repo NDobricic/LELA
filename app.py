@@ -84,7 +84,7 @@ def get_available_components() -> Dict[str, List[str]]:
         "candidates": ["none", "fuzzy", "bm25", "lela_dense", "lela_openai_api_dense"],
         "rerankers": [
             "none",
-            "cross_encoder",
+            "lela_cross_encoder",
             "vllm_api_client",
             "llama_server",
             "lela_embedder_transformers",
@@ -661,7 +661,7 @@ def run_pipeline(
         reranker_params["model_name"] = reranker_embedding_model
     if reranker_type == "lela_cross_encoder_vllm":
         reranker_params["model_name"] = reranker_cross_encoder_model
-    if reranker_type == "cross_encoder":
+    if reranker_type == "lela_cross_encoder":
         reranker_params["model_name"] = reranker_cross_encoder_model
     if reranker_type == "vllm_api_client":
         reranker_params["base_url"] = reranker_api_url
@@ -900,7 +900,7 @@ def update_cand_params(cand_choice: str):
 def update_reranker_params(reranker_choice: str):
     """Show/hide reranker-specific parameters based on selection."""
     show_cross_encoder_model = reranker_choice in (
-        "cross_encoder",
+        "lela_cross_encoder",
         "lela_cross_encoder_vllm",
     )
     show_embedding_model = reranker_choice in (
@@ -1543,7 +1543,7 @@ Test files are available in `data/test/`:
 | Name | Description |
 |------|-------------|
 | **none** | No reranking |
-| **cross_encoder** | Cross-encoder reranking |
+| **lela_cross_encoder** | Cross-encoder reranking |
 | **lela_embedder** | Embedding-based reranking |
 
 ### Disambiguators
