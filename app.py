@@ -1232,7 +1232,7 @@ if __name__ == "__main__":
     """
 
     with gr.Blocks(title="EL Pipeline 🔗", fill_height=True, head=custom_head) as demo:
-        gr.Markdown("# EL Pipeline", elem_classes=["main-header"])
+        gr.Markdown("EL Pipeline 🔗", elem_classes=["main-header"])
         gr.Markdown(
             DESCRIPTION,
             elem_classes=["subtitle"],
