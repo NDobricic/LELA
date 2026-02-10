@@ -95,21 +95,23 @@ The configuration names map to spaCy component factories:
 | `simple` | `el_pipeline_simple` | Regex-based NER |
 | `spacy` | Built-in + filter | spaCy's pretrained NER |
 | `gliner` | `el_pipeline_gliner` | GLiNER zero-shot |
-| `lela_gliner` | `el_pipeline_lela_gliner` | LELA GLiNER |
 | **Candidate Generators** | | |
 | `fuzzy` | `el_pipeline_fuzzy_candidates` | RapidFuzz matching |
 | `bm25` | `el_pipeline_bm25_candidates` | rank-bm25 retrieval |
-| `lela_bm25` | `el_pipeline_lela_bm25_candidates` | bm25s retrieval |
 | `lela_dense` | `el_pipeline_lela_dense_candidates` | Dense retrieval |
 | **Rerankers** | | |
 | `none` | `el_pipeline_noop_reranker` | No reranking |
 | `cross_encoder` | `el_pipeline_cross_encoder_reranker` | Cross-encoder |
-| `lela_embedder` | `el_pipeline_lela_embedder_reranker` | Embedding reranker |
+| `lela_embedder_transformers` | `el_pipeline_lela_embedder_transformers_reranker` | Bi-encoder (SentenceTransformers) |
+| `lela_embedder_vllm` | `el_pipeline_lela_embedder_vllm_reranker` | Bi-encoder (vLLM embed) |
+| `lela_cross_encoder_vllm` | `el_pipeline_lela_cross_encoder_vllm_reranker` | Cross-encoder (vLLM score) |
+| `vllm_api_client` | `el_pipeline_vllm_api_client_reranker` | vLLM API client reranker |
+| `llama_server` | `el_pipeline_llama_server_reranker` | Llama server reranker |
 | **Disambiguators** | | |
 | `first` | `el_pipeline_first_disambiguator` | Select first |
-| `popularity` | `el_pipeline_popularity_disambiguator` | Select by score |
 | `lela_vllm` | `el_pipeline_lela_vllm_disambiguator` | vLLM disambiguation |
 | `lela_transformers` | `el_pipeline_lela_transformers_disambiguator` | Transformers LLM disambiguation |
+| `lela_openai_api` | `el_pipeline_lela_openai_api_disambiguator` | OpenAI API disambiguation |
 
 ### Example Configurations
 
@@ -143,7 +145,7 @@ The configuration names map to spaCy component factories:
     "name": "cross_encoder",
     "params": {"model_name": "cross-encoder/ms-marco-MiniLM-L-6-v2", "top_k": 10}
   },
-  "disambiguator": {"name": "popularity"},
+  "disambiguator": {"name": "first"},
   "knowledge_base": {"name": "custom", "params": {"path": "kb.jsonl"}}
 }
 ```
@@ -154,24 +156,22 @@ The configuration names map to spaCy component factories:
 {
   "loader": {"name": "text"},
   "ner": {
-    "name": "lela_gliner",
+    "name": "gliner",
     "params": {
       "model_name": "numind/NuNER_Zero-span",
-      "labels": ["person", "organization", "location", "event", "work of art", "product"],
+      "labels": ["person", "organization", "location"],
       "threshold": 0.5
     }
   },
   "candidate_generator": {
-    "name": "lela_bm25",
+    "name": "lela_dense",
     "params": {"top_k": 64, "use_context": true}
   },
   "reranker": {
-    "name": "lela_embedder",
+    "name": "lela_embedder_transformers",
     "params": {
       "model_name": "Qwen/Qwen3-Embedding-4B",
-      "top_k": 10,
-      "base_url": "http://localhost",
-      "port": 8000
+      "top_k": 10
     }
   },
   "disambiguator": {
@@ -184,7 +184,7 @@ The configuration names map to spaCy component factories:
     }
   },
   "knowledge_base": {
-    "name": "lela_jsonl",
+    "name": "custom",
     "params": {"path": "entities.jsonl"}
   }
 }
@@ -335,16 +335,6 @@ The knowledge base should be a JSONL file with one entity per line:
 {"id": "Q90", "title": "Paris", "description": "Capital city of France"}
 ```
 
-### LELA JSONL Format
-
-For LELA components, the format uses title as the ID:
-
-```jsonl
-{"title": "Albert Einstein", "description": "German-born theoretical physicist"}
-{"title": "Germany", "description": "Country in Central Europe"}
-{"title": "Paris", "description": "Capital city of France"}
-```
-
 ## Caching
 
 The CLI uses multi-level persistent caching to speed up subsequent runs:
@@ -355,8 +345,7 @@ The CLI uses multi-level persistent caching to speed up subsequent runs:
 |-------|---------|---------|
 | Document | Parsed document data | Avoids re-parsing |
 | Knowledge Base | Parsed KB entities | ~5-7x for large KBs |
-| LELA BM25 Index | bm25s index + corpus | ~5x |
-| LELA Dense Index | FAISS embeddings | ~10-15x |
+| Dense Index | FAISS embeddings | ~10-15x |
 | rank-bm25 Index | BM25Okapi index | ~5x |
 
 ### Cache Location
@@ -365,8 +354,7 @@ The CLI uses multi-level persistent caching to speed up subsequent runs:
 .ner_cache/
   <hash>.pkl                    # Document cache
   kb/<hash>.pkl                 # KB entity cache
-  index/lela_bm25_<hash>/       # LELA BM25 index
-  index/lela_dense_<hash>/      # LELA Dense (FAISS) index
+  index/lela_dense_<hash>/      # Dense (FAISS) index
   index/bm25_<hash>.pkl         # rank-bm25 index
 ```
 

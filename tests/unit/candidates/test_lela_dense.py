@@ -50,7 +50,7 @@ class TestLELADenseCandidatesComponent:
     @patch("el_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
     def test_requires_knowledge_base(self, mock_get_st, mock_faiss, nlp):
         mock_model = MagicMock()
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
@@ -78,7 +78,7 @@ class TestLELADenseCandidatesComponent:
             [0.4, 0.5, 0.6],
             [0.7, 0.8, 0.9],
         ])
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
@@ -113,7 +113,7 @@ class TestLELADenseCandidatesComponent:
             # Query embedding
             np.array([[0.2, 0.3, 0.4]]),
         ]
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
@@ -147,7 +147,7 @@ class TestLELADenseCandidatesComponent:
             np.array([[0.1, 0.2, 0.3]] * 3),
             np.array([[0.2, 0.3, 0.4]]),
         ]
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
@@ -182,7 +182,7 @@ class TestLELADenseCandidatesComponent:
             encode_calls.append(texts)
             return np.array([[0.1, 0.2, 0.3]] * len(texts))
         mock_model.encode.side_effect = capture_encode
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
@@ -219,7 +219,7 @@ class TestLELADenseCandidatesComponent:
             encode_calls.append(texts)
             return np.array([[0.1, 0.2, 0.3]] * len(texts))
         mock_model.encode.side_effect = capture_encode
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=True)
@@ -250,7 +250,7 @@ class TestLELADenseCandidatesComponent:
             np.array([[0.1, 0.2, 0.3]] * 3),
             np.array([[0.2, 0.3, 0.4]]),
         ]
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=2, use_context=False)

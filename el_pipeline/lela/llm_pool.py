@@ -276,6 +276,7 @@ def get_vllm_instance(
     tensor_parallel_size: int = 1,
     max_model_len: Optional[int] = None,
     estimated_vram_gb: float = 10.0,
+    task: Optional[str] = None,
     **kwargs,
 ):
     """
@@ -289,13 +290,15 @@ def get_vllm_instance(
         tensor_parallel_size: Number of GPUs for tensor parallelism
         max_model_len: Maximum sequence length
         estimated_vram_gb: Estimated VRAM needed (for eviction decisions)
+        task: Optional vLLM task (e.g. "embed"). Included in cache key
+              and passed to vllm.LLM() constructor when set.
         **kwargs: Additional vLLM arguments
 
     Returns:
         Tuple of (vLLM LLM instance, bool indicating if it was cached)
     """
     global _vllm_in_use
-    key = f"{model_name}:tp{tensor_parallel_size}"
+    key = f"{model_name}:tp{tensor_parallel_size}:{task}" if task else f"{model_name}:tp{tensor_parallel_size}"
 
     was_cached = key in _vllm_instances
 
@@ -318,26 +321,28 @@ def get_vllm_instance(
             "trust_remote_code": True,  # Required for Qwen models to load tokenizer/chat template
             **kwargs,
         }
+        if task:
+            llm_kwargs["task"] = task
 
-        logger.info(f"Loading vLLM model: {model_name}")
+        logger.info(f"Loading vLLM model: {model_name} (task={task})")
         _vllm_instances[key] = vllm.LLM(**llm_kwargs)
-        logger.info(f"vLLM model loaded: {model_name}")
+        logger.info(f"vLLM model loaded: {model_name} (task={task})")
     else:
-        logger.info(f"Reusing cached vLLM model: {model_name}")
+        logger.info(f"Reusing cached vLLM model: {model_name} (task={task})")
 
     # Mark as in use
     _vllm_in_use.add(key)
     return _vllm_instances[key], was_cached
 
 
-def release_vllm(model_name: str, tensor_parallel_size: int = 1):
+def release_vllm(model_name: str, tensor_parallel_size: int = 1, task: Optional[str] = None):
     """
     Mark a vLLM instance as no longer in use.
-    
+
     The instance stays cached but can be evicted if memory is needed later.
     """
     global _vllm_in_use
-    key = f"{model_name}:tp{tensor_parallel_size}"
+    key = f"{model_name}:tp{tensor_parallel_size}:{task}" if task else f"{model_name}:tp{tensor_parallel_size}"
     _vllm_in_use.discard(key)
     logger.debug(f"Released vLLM instance: {key}")
 
@@ -394,9 +399,9 @@ def is_sentence_transformer_cached(model_name: str, device: Optional[str] = None
     return key in _sentence_transformer_instances
 
 
-def is_vllm_cached(model_name: str, tensor_parallel_size: int = 1) -> bool:
+def is_vllm_cached(model_name: str, tensor_parallel_size: int = 1, task: Optional[str] = None) -> bool:
     """Check if a vLLM model is currently cached."""
-    key = f"{model_name}:tp{tensor_parallel_size}"
+    key = f"{model_name}:tp{tensor_parallel_size}:{task}" if task else f"{model_name}:tp{tensor_parallel_size}"
     return key in _vllm_instances
 
 

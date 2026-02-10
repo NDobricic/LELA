@@ -409,6 +409,7 @@ class LELAvLLMDisambiguatorComponent:
 
         # Release LLM - stays cached but can be evicted if memory needed
         release_vllm(self.model_name, self.tensor_parallel_size)
+        self.llm = None  # Drop reference so pool eviction can free GPU memory
 
         # Clear progress callback after processing
         self.progress_callback = None

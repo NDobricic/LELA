@@ -35,7 +35,7 @@ class TestSentenceTransformerPool:
         # Clear any cached instances
         clear_sentence_transformer_instances(force=True)
 
-        model = get_sentence_transformer_instance(TEST_MODEL)
+        model, was_cached = get_sentence_transformer_instance(TEST_MODEL)
 
         # Model should be a SentenceTransformer instance
         assert model is not None
@@ -45,7 +45,7 @@ class TestSentenceTransformerPool:
         """Test that the loaded model can encode texts."""
         from el_pipeline.lela.llm_pool import get_sentence_transformer_instance
 
-        model = get_sentence_transformer_instance(TEST_MODEL)
+        model, _ = get_sentence_transformer_instance(TEST_MODEL)
 
         texts = ["Hello world", "This is a test"]
         embeddings = model.encode(texts, convert_to_numpy=True)
@@ -58,7 +58,7 @@ class TestSentenceTransformerPool:
         """Test that embeddings capture semantic similarity."""
         from el_pipeline.lela.llm_pool import get_sentence_transformer_instance
 
-        model = get_sentence_transformer_instance(TEST_MODEL)
+        model, _ = get_sentence_transformer_instance(TEST_MODEL)
 
         # Similar texts
         texts = [
@@ -84,10 +84,12 @@ class TestSentenceTransformerPool:
 
         clear_sentence_transformer_instances(force=True)
 
-        model1 = get_sentence_transformer_instance(TEST_MODEL)
-        model2 = get_sentence_transformer_instance(TEST_MODEL)
+        model1, cached1 = get_sentence_transformer_instance(TEST_MODEL)
+        model2, cached2 = get_sentence_transformer_instance(TEST_MODEL)
 
         assert model1 is model2
+        assert not cached1
+        assert cached2
 
 
 @pytest.mark.slow

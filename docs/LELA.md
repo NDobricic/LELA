@@ -29,7 +29,7 @@ LELA is a **true zero-shot** entity linking approach that:
 | **No Fine-tuning** | Works out-of-the-box for any domain |
 | **Domain Agnostic** | Adapts to legal, biomedical, company-specific KBs |
 | **High Accuracy** | Competitive with fine-tuned approaches |
-| **Modular** | Each component is independently swappable |
+| **Modular** | Each component is independently swappable as a spaCy pipeline factory |
 
 ### Comparison with Traditional Approaches
 
@@ -75,8 +75,8 @@ Output: [Paris (city), Paris (novel), Paris (Texas), Paris Hilton, ...]
 ```
 
 LELA is retriever-agnostic and supports:
-- BM25 (keyword-based) → `el_pipeline_lela_bm25_candidates`
 - Dense retrieval (semantic embeddings) → `el_pipeline_lela_dense_candidates`
+- BM25 (keyword-based) → `el_pipeline_bm25_candidates`
 - Fuzzy matching (string similarity) → `el_pipeline_fuzzy_candidates`
 
 #### Stage 2: Candidate Selection (Disambiguation)
@@ -125,9 +125,6 @@ Zero-shot NER using GLiNER with LELA defaults.
 - person
 - organization
 - location
-- event
-- work of art
-- product
 
 **Configuration:**
 ```python
@@ -139,10 +136,10 @@ nlp.add_pipe("el_pipeline_lela_gliner", config={
 })
 ```
 
-**JSON Config:**
+**JSON Config (via ELPipeline):**
 ```json
 {
-  "name": "lela_gliner",
+  "name": "gliner",
   "params": {
     "model_name": "numind/NuNER_Zero-span",
     "labels": ["person", "organization", "location"],
@@ -151,38 +148,9 @@ nlp.add_pipe("el_pipeline_lela_gliner", config={
 }
 ```
 
+**Note:** The `el_pipeline_lela_gliner` factory uses LELA defaults and can be used directly with `nlp.add_pipe()`. Through `ELPipeline`, use config name `"gliner"` with LELA model parameters.
+
 ### LELA Candidate Generation
-
-#### `el_pipeline_lela_bm25_candidates`
-
-Fast BM25 retrieval using bm25s library with stemming.
-
-**Features:**
-- Numba-accelerated BM25
-- Language-specific stemming (PyStemmer)
-- Context integration
-
-**spaCy Usage:**
-```python
-cand = nlp.add_pipe("el_pipeline_lela_bm25_candidates", config={
-    "top_k": 64,
-    "use_context": True,
-    "stemmer_language": "english"
-})
-cand.initialize(kb)
-```
-
-**JSON Config:**
-```json
-{
-  "name": "lela_bm25",
-  "params": {
-    "top_k": 64,
-    "use_context": true,
-    "stemmer_language": "english"
-  }
-}
-```
 
 #### `el_pipeline_lela_dense_candidates`
 
@@ -208,7 +176,7 @@ Query: {mention_text}
 cand = nlp.add_pipe("el_pipeline_lela_dense_candidates", config={
     "model_name": "Qwen/Qwen3-Embedding-4B",
     "top_k": 64,
-    "use_context": True
+    "use_context": False
 })
 cand.initialize(kb)
 ```
@@ -219,23 +187,24 @@ cand.initialize(kb)
   "name": "lela_dense",
   "params": {
     "model_name": "Qwen/Qwen3-Embedding-4B",
-    "top_k": 64,
-    "use_context": true
+    "top_k": 64
   }
 }
 ```
 
-**Note:** The dense candidate generator now uses SentenceTransformers directly for local model loading. No external API server is required.
+**Note:** The dense candidate generator uses SentenceTransformers directly for local model loading. No external API server is required.
 
-### LELA Reranking: `el_pipeline_lela_embedder_reranker`
+### LELA Reranking
 
-Cosine similarity reranking with marked mentions using SentenceTransformers.
+Two reranker variants are available: one using SentenceTransformers (local) and one using vLLM.
+
+#### `el_pipeline_lela_embedder_transformers_reranker`
+
+Bi-encoder reranker using SentenceTransformers with cosine similarity.
 
 **Default Model:** `Qwen/Qwen3-Embedding-4B`
 
 **Available Models:**
-- `sentence-transformers/all-MiniLM-L6-v2` (~0.3GB)
-- `BAAI/bge-base-en-v1.5` (~0.5GB)
 - `Qwen/Qwen3-Embedding-0.6B` (~2GB)
 - `Qwen/Qwen3-Embedding-4B` (~9GB)
 
@@ -255,7 +224,7 @@ Query: France hosted the Olympics in [Paris].
 
 **spaCy Usage:**
 ```python
-nlp.add_pipe("el_pipeline_lela_embedder_reranker", config={
+nlp.add_pipe("el_pipeline_lela_embedder_transformers_reranker", config={
     "model_name": "Qwen/Qwen3-Embedding-4B",
     "top_k": 10
 })
@@ -264,7 +233,7 @@ nlp.add_pipe("el_pipeline_lela_embedder_reranker", config={
 **JSON Config:**
 ```json
 {
-  "name": "lela_embedder",
+  "name": "lela_embedder_transformers",
   "params": {
     "model_name": "Qwen/Qwen3-Embedding-4B",
     "top_k": 10
@@ -272,7 +241,28 @@ nlp.add_pipe("el_pipeline_lela_embedder_reranker", config={
 }
 ```
 
-**Note:** The reranker now uses SentenceTransformers directly for local model loading. No external API server is required.
+#### `el_pipeline_lela_embedder_vllm_reranker`
+
+Bi-encoder reranker using vLLM with task="embed". Uses manual L2 normalization of embeddings.
+
+**spaCy Usage:**
+```python
+nlp.add_pipe("el_pipeline_lela_embedder_vllm_reranker", config={
+    "model_name": "Qwen/Qwen3-Embedding-4B",
+    "top_k": 10
+})
+```
+
+**JSON Config:**
+```json
+{
+  "name": "lela_embedder_vllm",
+  "params": {
+    "model_name": "Qwen/Qwen3-Embedding-4B",
+    "top_k": 10
+  }
+}
+```
 
 ### LELA vLLM Disambiguation: `el_pipeline_lela_vllm_disambiguator`
 
@@ -350,24 +340,22 @@ disamb.initialize(kb)
 
 **Note:** This component loads the model directly with HuggingFace transformers, which may be slower than vLLM but has better compatibility with older hardware.
 
-### LELA Knowledge Base: `lela_jsonl`
+### Knowledge Base
 
-LELA-format JSONL knowledge base where title serves as ID.
+LELA components use the `custom` JSONL knowledge base.
 
 **Format:**
 ```jsonl
-{"title": "Albert Einstein", "description": "German-born theoretical physicist"}
-{"title": "Paris", "description": "Capital city of France"}
+{"id": "Q937", "title": "Albert Einstein", "description": "German-born theoretical physicist"}
+{"id": "Q90", "title": "Paris", "description": "Capital city of France"}
 ```
 
 **JSON Config:**
 ```json
 {
-  "name": "lela_jsonl",
+  "name": "custom",
   "params": {
-    "path": "entities.jsonl",
-    "title_field": "title",
-    "description_field": "description"
+    "path": "entities.jsonl"
   }
 }
 ```
@@ -380,23 +368,21 @@ LELA-format JSONL knowledge base where title serves as ID.
 {
   "loader": {"name": "text"},
   "ner": {
-    "name": "lela_gliner",
+    "name": "gliner",
     "params": {
       "model_name": "numind/NuNER_Zero-span",
-      "labels": ["person", "organization", "location", "event", "work of art", "product"],
+      "labels": ["person", "organization", "location"],
       "threshold": 0.5
     }
   },
   "candidate_generator": {
-    "name": "lela_bm25",
+    "name": "lela_dense",
     "params": {
-      "top_k": 64,
-      "use_context": true,
-      "stemmer_language": "english"
+      "top_k": 64
     }
   },
   "reranker": {
-    "name": "lela_embedder",
+    "name": "lela_embedder_transformers",
     "params": {
       "model_name": "Qwen/Qwen3-Embedding-4B",
       "top_k": 10
@@ -413,12 +399,13 @@ LELA-format JSONL knowledge base where title serves as ID.
     }
   },
   "knowledge_base": {
-    "name": "lela_jsonl",
+    "name": "custom",
     "params": {"path": "kb.jsonl"}
   }
 }
+```
 
-### Lightweight Configuration (BM25 only)
+### Lightweight Configuration
 
 For faster processing without GPU requirements:
 
@@ -426,17 +413,17 @@ For faster processing without GPU requirements:
 {
   "loader": {"name": "text"},
   "ner": {
-    "name": "lela_gliner",
+    "name": "gliner",
     "params": {"threshold": 0.5}
   },
   "candidate_generator": {
-    "name": "lela_bm25",
+    "name": "fuzzy",
     "params": {"top_k": 10}
   },
   "reranker": {"name": "none"},
   "disambiguator": {"name": "first"},
   "knowledge_base": {
-    "name": "lela_jsonl",
+    "name": "custom",
     "params": {"path": "kb.jsonl"}
   }
 }
@@ -467,10 +454,7 @@ The pipeline uses multi-level persistent caching for documents, knowledge bases,
 .ner_cache/
   <hash>.pkl                          # Document parsing cache
   kb/<kb_hash>.pkl                    # KB entity data cache
-  index/lela_bm25_<hash>/             # LELA BM25 index
-    bm25s/                            # bm25s serialized index
-    components.pkl                    # corpus_records
-  index/lela_dense_<hash>/            # LELA Dense index
+  index/lela_dense_<hash>/            # Dense index
     index.faiss                       # FAISS index
   index/bm25_<hash>.pkl               # rank-bm25 index
 ```
@@ -480,10 +464,8 @@ The pipeline uses multi-level persistent caching for documents, knowledge bases,
 | Component | Cold Load | Warm Load | Speedup |
 |-----------|-----------|-----------|---------|
 | KB (YAGO 5M entities) | ~70s | ~10-15s | ~5-7x |
-| LELA BM25 index | ~5-10s | ~1-2s | ~5x |
-| LELA Dense index | ~20-30s | ~1-3s | ~10-15x |
+| Dense index | ~20-30s | ~1-3s | ~10-15x |
 | rank-bm25 index | ~5-10s | ~1-2s | ~5x |
-| **Total init** | **~100-120s** | **~13-22s** | **~5-8x** |
 
 #### Cache Key Generation
 
@@ -499,7 +481,6 @@ key = SHA256(f"kb:{path}:{mtime}:{size}".encode()).hexdigest()
 
 **Index caches (depend on KB identity):**
 ```python
-key = SHA256(f"lela_bm25:{kb.identity_hash}:{stemmer_language}".encode()).hexdigest()
 key = SHA256(f"lela_dense:{kb.identity_hash}:{model_name}".encode()).hexdigest()
 key = SHA256(f"bm25:{kb.identity_hash}".encode()).hexdigest()
 ```
@@ -523,22 +504,22 @@ Default configuration values for LELA components.
 
 ```python
 # NER Settings
-NER_LABELS = ["person", "organization", "location", "event", "work of art", "product"]
+NER_LABELS = ["person", "organization", "location"]
 DEFAULT_GLINER_MODEL = "numind/NuNER_Zero-span"
 
 # Candidate Generation
 DEFAULT_EMBEDDER_MODEL = "Qwen/Qwen3-Embedding-4B"
 CANDIDATES_TOP_K = 64
-RETRIEVER_TASK = "Given an entity mention and its context..."
+RETRIEVER_TASK = "Given an ambiguous mention, retrieve relevant entities..."
 
 # Reranking
 DEFAULT_RERANKER_MODEL = "tomaarsen/Qwen3-Reranker-4B-seq-cls"
 RERANKER_TOP_K = 10
-RERANKER_TASK = "Given the entity mention marked with [...]..."
+RERANKER_TASK = "Given a text with a mention enclosed between '[' and ']'..."
 
 # Disambiguation
 DEFAULT_LLM_MODEL = "Qwen/Qwen3-4B"
-NOT_AN_ENTITY = "None"
+NOT_AN_ENTITY = ""
 SPAN_OPEN = "["
 SPAN_CLOSE = "]"
 ```
@@ -590,11 +571,11 @@ import json
 # Load LELA configuration
 config_dict = {
     "loader": {"name": "text"},
-    "ner": {"name": "lela_gliner", "params": {"threshold": 0.5}},
-    "candidate_generator": {"name": "lela_bm25", "params": {"top_k": 64}},
+    "ner": {"name": "gliner", "params": {"threshold": 0.5}},
+    "candidate_generator": {"name": "lela_dense", "params": {"top_k": 64}},
     "reranker": {"name": "none"},
     "disambiguator": {"name": "first"},
-    "knowledge_base": {"name": "lela_jsonl", "params": {"path": "kb.jsonl"}}
+    "knowledge_base": {"name": "custom", "params": {"path": "kb.jsonl"}}
 }
 
 config = PipelineConfig.from_dict(config_dict)
@@ -609,7 +590,7 @@ results = pipeline.run(["document.txt"], output_path="results.jsonl")
 ```python
 import spacy
 from el_pipeline import spacy_components  # Register factories
-from el_pipeline.knowledge_bases.lela import LELAJSONLKnowledgeBase
+from el_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
 
 # Build LELA pipeline manually
 nlp = spacy.blank("en")
@@ -620,10 +601,9 @@ nlp.add_pipe("el_pipeline_lela_gliner", config={
     "labels": ["person", "organization", "location"]
 })
 
-# Add BM25 candidates
-cand = nlp.add_pipe("el_pipeline_lela_bm25_candidates", config={
-    "top_k": 64,
-    "use_context": True
+# Add dense candidates
+cand = nlp.add_pipe("el_pipeline_lela_dense_candidates", config={
+    "top_k": 64
 })
 
 # Add reranker (optional)
@@ -633,7 +613,7 @@ nlp.add_pipe("el_pipeline_noop_reranker")
 disamb = nlp.add_pipe("el_pipeline_first_disambiguator")
 
 # Initialize with KB
-kb = LELAJSONLKnowledgeBase(path="kb.jsonl")
+kb = CustomJSONLKnowledgeBase(path="kb.jsonl")
 cand.initialize(kb)
 disamb.initialize(kb)
 
@@ -659,10 +639,10 @@ python -m el_pipeline.cli \
 ### Web App with LELA
 
 1. Start the web app: `python app.py`
-2. Select "lela_gliner" for NER
-3. Select "lela_bm25" or "lela_dense" for candidate generation
-4. Optionally enable "lela_embedder" reranker
-5. Select "lela_vllm" for disambiguation
+2. Select "lela_gliner" or "gliner" for NER
+3. Select "lela_dense" or "bm25" for candidate generation
+4. Optionally enable "lela_embedder_transformers" or "lela_embedder_vllm" reranker
+5. Select "lela_vllm" or "lela_transformers" for disambiguation
 6. Upload your knowledge base and documents
 
 ## Performance Considerations
@@ -672,18 +652,19 @@ python -m el_pipeline.cli \
 | Component | GPU Recommended | Notes |
 |-----------|-----------------|-------|
 | lela_gliner | Yes | GLiNER model inference |
-| lela_bm25 | No | CPU-based BM25 |
 | lela_dense | Yes | Embedding computation via SentenceTransformers |
-| lela_embedder | Yes | Embedding computation via SentenceTransformers |
+| lela_embedder_transformers | Yes | Embedding computation via SentenceTransformers |
+| lela_embedder_vllm | Yes (Required) | vLLM-based embedding |
+| lela_cross_encoder_vllm | Yes (Required) | vLLM-based cross-encoder |
 | lela_vllm | Yes (Required) | vLLM-based LLM inference |
 | lela_transformers | Yes | HuggingFace transformers (better P100 support) |
 
 ### CUDA Compatibility
 
 For **P100/Pascal GPUs** (compute capability 6.0):
-- Use `torch==2.6.0+cu118` (CUDA 11.8)
-- Use `vllm==0.8.5` (newer versions drop P100 support)
-- Install from PyTorch index: `pip install torch==2.6.0+cu118 --index-url https://download.pytorch.org/whl/cu118`
+- Use `torch==2.7.1+cu118` (CUDA 11.8)
+- Use `vllm==0.10.1` (latest version compatible with torch 2.7.1+cu118)
+- Install from PyTorch index: `pip install torch==2.7.1+cu118 --index-url https://download.pytorch.org/whl/cu118`
 
 For **newer GPUs** (A100, H100, etc.):
 - Can use latest PyTorch/vLLM with CUDA 12.x

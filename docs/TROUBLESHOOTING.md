@@ -29,7 +29,7 @@ This guide provides solutions for common issues encountered when installing and 
 
    For **CUDA 11.8** (P100/Pascal GPUs):
    ```bash
-   pip install torch==2.6.0+cu118 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+   pip install torch==2.7.1+cu118 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
    ```
 
    For **CUDA 12.x** (newer GPUs):
@@ -60,8 +60,8 @@ This guide provides solutions for common issues encountered when installing and 
 2. **CUDA/PyTorch mismatch:**
    ```bash
    # Ensure PyTorch is installed first with correct CUDA
-   pip install torch==2.6.0+cu118 --index-url https://download.pytorch.org/whl/cu118
-   pip install vllm==0.8.5
+   pip install torch==2.7.1+cu118 --index-url https://download.pytorch.org/whl/cu118
+   pip install vllm==0.10.1
    ```
 
 3. **Build dependencies missing:**
@@ -165,7 +165,7 @@ When building pipelines manually with spaCy:
 ```python
 import spacy
 from el_pipeline import spacy_components
-from el_pipeline.knowledge_bases.lela_jsonl import LELAJSONLKnowledgeBase
+from el_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
 
 nlp = spacy.blank("en")
 nlp.add_pipe("el_pipeline_simple")
@@ -173,7 +173,7 @@ cand = nlp.add_pipe("el_pipeline_fuzzy_candidates")
 disamb = nlp.add_pipe("el_pipeline_first_disambiguator")
 
 # Initialize with knowledge base
-kb = LELAJSONLKnowledgeBase(path="kb.jsonl")
+kb = CustomJSONLKnowledgeBase(path="kb.jsonl")
 cand.initialize(kb)
 disamb.initialize(kb)
 ```
@@ -190,7 +190,7 @@ When using `ELPipeline`, initialization is automatic.
    ```json
    {
      "ner": {
-       "name": "lela_gliner",
+       "name": "gliner",
        "params": {"threshold": 0.3}  // Try lowering from 0.5
      }
    }
@@ -218,9 +218,9 @@ When using `ELPipeline`, initialization is automatic.
 
 Use specific versions that support P100:
 ```bash
-# CUDA 11.8 + PyTorch 2.6.0 + vLLM 0.8.5
-pip install torch==2.6.0+cu118 --index-url https://download.pytorch.org/whl/cu118
-pip install vllm==0.8.5
+# CUDA 11.8 + PyTorch 2.7.1 + vLLM 0.10.1
+pip install torch==2.7.1+cu118 --index-url https://download.pytorch.org/whl/cu118
+pip install vllm==0.10.1
 ```
 
 Alternatively, use the `lela_transformers` disambiguator which uses HuggingFace transformers directly:
@@ -260,11 +260,11 @@ Alternatively, use the `lela_transformers` disambiguator which uses HuggingFace 
    ```json
    {
      "candidate_generator": {
-       "name": "lela_bm25",
+       "name": "bm25",
        "params": {"top_k": 32}  // Instead of 64
      },
      "reranker": {
-       "name": "lela_embedder",
+       "name": "lela_embedder_transformers",
        "params": {"top_k": 5}  // Instead of 10
      }
    }
@@ -314,7 +314,7 @@ if torch.cuda.is_available():
 2. Reinstall PyTorch with CUDA support:
    ```bash
    pip uninstall torch torchvision torchaudio
-   pip install torch==2.6.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+   pip install torch==2.7.1+cu118 --index-url https://download.pytorch.org/whl/cu118
    ```
 
 3. For components without GPU, they will run on CPU (this is expected for BM25, fuzzy matching, etc.)

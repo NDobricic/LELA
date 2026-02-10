@@ -78,7 +78,7 @@ nlp.add_pipe("el_pipeline_lela_gliner", config={
 })
 
 # Add candidate generation
-cand = nlp.add_pipe("el_pipeline_lela_bm25_candidates", config={
+cand = nlp.add_pipe("el_pipeline_lela_dense_candidates", config={
     "top_k": 64
 })
 
@@ -89,8 +89,8 @@ nlp.add_pipe("el_pipeline_noop_reranker")
 disamb = nlp.add_pipe("el_pipeline_first_disambiguator")
 
 # Initialize components with KB
-from el_pipeline.knowledge_bases.lela import LELAJSONLKnowledgeBase
-kb = LELAJSONLKnowledgeBase(path="kb.jsonl")
+from el_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
+kb = CustomJSONLKnowledgeBase(path="kb.jsonl")
 cand.initialize(kb)
 disamb.initialize(kb)
 
@@ -102,20 +102,24 @@ doc = nlp("Albert Einstein visited Paris.")
 
 | Config Name | spaCy Factory Name |
 |-------------|-------------------|
-| `lela_gliner` | `el_pipeline_lela_gliner` |
 | `simple` | `el_pipeline_simple` |
 | `gliner` | `el_pipeline_gliner` |
-| `lela_bm25` | `el_pipeline_lela_bm25_candidates` |
 | `lela_dense` | `el_pipeline_lela_dense_candidates` |
 | `fuzzy` | `el_pipeline_fuzzy_candidates` |
 | `bm25` | `el_pipeline_bm25_candidates` |
-| `lela_embedder` | `el_pipeline_lela_embedder_reranker` |
+| `lela_embedder_transformers` | `el_pipeline_lela_embedder_transformers_reranker` |
+| `lela_embedder_vllm` | `el_pipeline_lela_embedder_vllm_reranker` |
+| `lela_cross_encoder_vllm` | `el_pipeline_lela_cross_encoder_vllm_reranker` |
 | `cross_encoder` | `el_pipeline_cross_encoder_reranker` |
+| `vllm_api_client` | `el_pipeline_vllm_api_client_reranker` |
+| `llama_server` | `el_pipeline_llama_server_reranker` |
 | `none` | `el_pipeline_noop_reranker` |
 | `lela_vllm` | `el_pipeline_lela_vllm_disambiguator` |
 | `lela_transformers` | `el_pipeline_lela_transformers_disambiguator` |
+| `lela_openai_api` | `el_pipeline_lela_openai_api_disambiguator` |
 | `first` | `el_pipeline_first_disambiguator` |
-| `popularity` | `el_pipeline_popularity_disambiguator` |
+
+**Note:** The `el_pipeline_lela_gliner` factory is registered and can be used directly with `nlp.add_pipe()`, but is not yet available as a config name through `ELPipeline`.
 
 ---
 
@@ -143,9 +147,6 @@ Zero-shot GLiNER NER with LELA defaults.
 - person
 - organization
 - location
-- event
-- work of art
-- product
 
 **Behavior:**
 - Uses GLiNER library for zero-shot NER
@@ -261,26 +262,6 @@ Candidate components populate `ent._.candidates` with `List[Candidate]` objects 
 
 **Location:** `el_pipeline/spacy_components/candidates.py`
 
-### LELABM25CandidatesComponent
-
-Fast BM25 retrieval using bm25s library.
-
-**Factory:** `el_pipeline_lela_bm25_candidates`
-
-**Config:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `top_k` | int | 64 | Maximum candidates |
-| `use_context` | bool | True | Include context in query |
-| `stemmer_language` | str | "english" | Stemmer language |
-
-**Requires:** `initialize(kb)` call
-
-**Algorithm:**
-- Uses bm25s with numba backend
-- PyStemmer for language-specific stemming
-- Queries: `{mention_text} {context}`
-
 ### LELADenseCandidatesComponent
 
 Dense retrieval using embeddings and FAISS.
@@ -293,7 +274,7 @@ Dense retrieval using embeddings and FAISS.
 | `model_name` | str | LELA default | Embedding model |
 | `top_k` | int | 64 | Maximum candidates |
 | `device` | str | None | Device override (e.g., "cuda", "cpu") |
-| `use_context` | bool | True | Include context |
+| `use_context` | bool | False | Include context |
 
 **Requires:** `initialize(kb)` call
 
@@ -342,11 +323,11 @@ Reranker components reorder `ent._.candidates` by relevance.
 
 **Location:** `el_pipeline/spacy_components/rerankers.py`
 
-### LELAEmbedderRerankerComponent
+### LELAEmbedderTransformersRerankerComponent
 
-Embedding-based cosine similarity reranking.
+Bi-encoder reranker using SentenceTransformers. Uses cosine similarity between query and candidate embeddings.
 
-**Factory:** `el_pipeline_lela_embedder_reranker`
+**Factory:** `el_pipeline_lela_embedder_transformers_reranker`
 
 **Config:**
 | Parameter | Type | Default | Description |
@@ -355,19 +336,29 @@ Embedding-based cosine similarity reranking.
 | `top_k` | int | 10 | Candidates to keep |
 | `device` | str | None | Device override (e.g., "cuda", "cpu") |
 
-**Mention Marking:**
-```
-Original: "France hosted the Olympics in Paris."
-Marked:   "France hosted the Olympics in [Paris]."
-```
+### LELAEmbedderVLLMRerankerComponent
 
-**Query Format:**
-```
-Instruct: Given the entity mention marked with [...] in the input text,
-retrieve the entity from the knowledge base that the marked mention
-refers to.
-Query: {marked_text}
-```
+Bi-encoder reranker using vLLM with task="embed". Manual L2 normalization of embeddings.
+
+**Factory:** `el_pipeline_lela_embedder_vllm_reranker`
+
+**Config:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model_name` | str | LELA default | Embedding model |
+| `top_k` | int | 10 | Candidates to keep |
+
+### LELACrossEncoderVLLMRerankerComponent
+
+Cross-encoder reranker using vLLM `.score()` API with the Qwen3-Reranker-seq-cls model variant.
+
+**Factory:** `el_pipeline_lela_cross_encoder_vllm_reranker`
+
+**Config:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model_name` | str | LELA default | Cross-encoder model |
+| `top_k` | int | 10 | Candidates to keep |
 
 ### CrossEncoderRerankerComponent
 
@@ -448,16 +439,6 @@ Select first candidate.
 
 **Requires:** `initialize(kb)` call
 
-### PopularityDisambiguatorComponent
-
-Select by highest score (first in sorted list).
-
-**Factory:** `el_pipeline_popularity_disambiguator`
-
-**Config:** None
-
-**Requires:** `initialize(kb)` call
-
 ---
 
 ## Document Loaders
@@ -521,28 +502,16 @@ Knowledge bases are registry-based (not spaCy components).
 
 **Registration:** `custom`
 
-**Format:**
-```jsonl
-{"id": "Q937", "title": "Albert Einstein", "description": "Theoretical physicist"}
-```
-
-### LELAJSONLKnowledgeBase
-
-**Registration:** `lela_jsonl`
-
 **Config:**
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `path` | required | Path to JSONL file |
-| `title_field` | "title" | Field for title |
-| `description_field` | "description" | Field for description |
+| `cache_dir` | None | Optional directory for persistent caching |
 
 **Format:**
 ```jsonl
-{"title": "Albert Einstein", "description": "Theoretical physicist"}
+{"id": "Q937", "title": "Albert Einstein", "description": "Theoretical physicist"}
 ```
-
-**Note:** Uses title as entity ID (LELA convention)
 
 ---
 
@@ -586,10 +555,7 @@ The pipeline implements multi-level persistent caching to significantly reduce i
 .ner_cache/
   <hash>.pkl                          # Document parsing cache
   kb/<kb_hash>.pkl                    # KB entity data cache
-  index/lela_bm25_<hash>/             # LELA BM25 index cache
-    bm25s/                            # bm25s serialized index
-    components.pkl                    # corpus_records
-  index/lela_dense_<hash>/            # LELA Dense index cache
+  index/lela_dense_<hash>/            # Dense index cache
     index.faiss                       # FAISS index file
   index/bm25_<hash>.pkl               # rank-bm25 index cache
 ```
@@ -599,8 +565,7 @@ The pipeline implements multi-level persistent caching to significantly reduce i
 | Cache | Cold Load | Warm Load | Speedup |
 |-------|-----------|-----------|---------|
 | KB (YAGO 5M entities) | ~70s | ~10-15s | ~5-7x |
-| LELA BM25 index | ~5-10s | ~1-2s | ~5x |
-| LELA Dense index | ~20-30s | ~1-3s | ~10-15x |
+| Dense index | ~20-30s | ~1-3s | ~10-15x |
 | rank-bm25 index | ~5-10s | ~1-2s | ~5x |
 
 ### Cache Key Generation
@@ -617,10 +582,7 @@ key = SHA256(f"kb:{path}:{mtime}:{size}".encode())
 
 **Index caches:**
 ```python
-# LELA BM25
-key = SHA256(f"lela_bm25:{kb.identity_hash}:{stemmer_language}".encode())
-
-# LELA Dense
+# Dense
 key = SHA256(f"lela_dense:{kb.identity_hash}:{model_name}".encode())
 
 # rank-bm25

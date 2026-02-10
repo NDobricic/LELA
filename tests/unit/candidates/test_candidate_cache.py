@@ -15,155 +15,6 @@ from el_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
 from el_pipeline.types import Entity
 
 
-class TestLELABM25Cache:
-    """Tests for LELABM25CandidatesComponent caching."""
-
-    @pytest.fixture
-    def kb_data(self) -> list[dict]:
-        return [
-            {"title": "Barack Obama", "description": "44th US President"},
-            {"title": "Joe Biden", "description": "46th US President"},
-            {"title": "United States", "description": "Country in North America"},
-        ]
-
-    @pytest.fixture
-    def temp_kb_file(self, kb_data: list[dict]) -> str:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            for item in kb_data:
-                f.write(json.dumps(item) + "\n")
-            path = f.name
-        yield path
-        os.unlink(path)
-
-    @pytest.fixture
-    def kb(self, temp_kb_file: str) -> CustomJSONLKnowledgeBase:
-        return CustomJSONLKnowledgeBase(path=temp_kb_file)
-
-    @pytest.fixture
-    def cache_dir(self) -> str:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield tmpdir
-
-    @pytest.fixture
-    def nlp(self):
-        return spacy.blank("en")
-
-    @patch("el_pipeline.spacy_components.candidates._get_stemmer")
-    @patch("el_pipeline.spacy_components.candidates._get_bm25s")
-    def test_initialize_saves_cache(
-        self, mock_bm25s, mock_stemmer, kb, cache_dir, nlp
-    ):
-        """First initialize with cache_dir calls retriever.save and writes components.pkl."""
-        mock_stemmer_instance = MagicMock()
-        mock_stemmer.return_value.Stemmer.return_value = mock_stemmer_instance
-
-        mock_tokenizer = MagicMock()
-        mock_bm25s.return_value.tokenization.Tokenizer.return_value = mock_tokenizer
-        mock_tokenizer.tokenize.return_value = [("tokens",)]
-
-        mock_retriever = MagicMock()
-        mock_bm25s.return_value.BM25.return_value = mock_retriever
-
-        from el_pipeline.spacy_components.candidates import LELABM25CandidatesComponent
-        # Use real picklable objects for stemmer/tokenizer so pickle.dump succeeds
-        component = LELABM25CandidatesComponent(nlp=nlp, top_k=5, use_context=False)
-        component.initialize(kb, cache_dir=Path(cache_dir))
-
-        # Override non-picklable mocks with real data, then manually save
-        # Instead, verify that retriever.save was called with the right path pattern
-        mock_retriever.save.assert_called_once()
-        save_path = mock_retriever.save.call_args[0][0]
-        assert "lela_bm25_" in str(save_path)
-        assert "bm25s" in str(save_path)
-
-        # The index directory should have been created
-        index_dir = save_path.parent
-        assert index_dir.exists()
-
-    @patch("el_pipeline.spacy_components.candidates._get_stemmer")
-    @patch("el_pipeline.spacy_components.candidates._get_bm25s")
-    def test_initialize_loads_from_cache(
-        self, mock_bm25s, mock_stemmer, kb, cache_dir, nlp
-    ):
-        """Cache hit loads retriever via BM25.load and components from pickle."""
-        import hashlib
-
-        mock_stemmer_instance = MagicMock()
-        mock_stemmer.return_value.Stemmer.return_value = mock_stemmer_instance
-
-        mock_tokenizer = MagicMock()
-        mock_bm25s.return_value.tokenization.Tokenizer.return_value = mock_tokenizer
-        mock_tokenizer.tokenize.return_value = [("tokens",)]
-
-        mock_retriever = MagicMock()
-        mock_bm25s.return_value.BM25.return_value = mock_retriever
-
-        mock_loaded_retriever = MagicMock()
-        mock_bm25s.return_value.BM25.load.return_value = mock_loaded_retriever
-
-        from el_pipeline.spacy_components.candidates import LELABM25CandidatesComponent
-
-        # Compute the expected cache hash to pre-populate cache
-        raw = f"lela_bm25:{kb.identity_hash}:english".encode()
-        cache_hash = hashlib.sha256(raw).hexdigest()
-        index_dir = Path(cache_dir) / "index" / f"lela_bm25_{cache_hash}"
-        bm25s_dir = index_dir / "bm25s"
-        bm25s_dir.mkdir(parents=True, exist_ok=True)
-
-        # Write a valid components.pkl with picklable data
-        # Note: stemmer is not pickled (Cython object), it's recreated on load
-        corpus_records = [
-            {"id": "Barack Obama", "title": "Barack Obama", "description": "44th US President"},
-            {"id": "Joe Biden", "title": "Joe Biden", "description": "46th US President"},
-            {"id": "United States", "title": "United States", "description": "Country in North America"},
-        ]
-        components_file = index_dir / "components.pkl"
-        with components_file.open("wb") as f:
-            pickle.dump(corpus_records, f)
-
-        # Initialize - should load from cache
-        component = LELABM25CandidatesComponent(nlp=nlp, top_k=5, use_context=False)
-        component.initialize(kb, cache_dir=Path(cache_dir))
-
-        # BM25.load should have been called (cache hit)
-        mock_bm25s.return_value.BM25.load.assert_called_once_with(bm25s_dir, load_corpus=True)
-        # index() should NOT have been called (skipped due to cache hit)
-        mock_retriever.index.assert_not_called()
-
-        # The loaded retriever should be assigned
-        assert component.retriever is mock_loaded_retriever
-        # corpus_records should be restored from pickle
-        assert component.corpus_records == corpus_records
-        # stemmer should be recreated (not from pickle)
-        mock_stemmer.return_value.Stemmer.assert_called_with("english")
-
-    @patch("el_pipeline.spacy_components.candidates._get_stemmer")
-    @patch("el_pipeline.spacy_components.candidates._get_bm25s")
-    def test_no_cache_dir_skips_caching(
-        self, mock_bm25s, mock_stemmer, kb, nlp
-    ):
-        """Without cache_dir, no cache operations occur."""
-        mock_stemmer_instance = MagicMock()
-        mock_stemmer.return_value.Stemmer.return_value = mock_stemmer_instance
-
-        mock_tokenizer = MagicMock()
-        mock_bm25s.return_value.tokenization.Tokenizer.return_value = mock_tokenizer
-        mock_tokenizer.tokenize.return_value = [("tokens",)]
-
-        mock_retriever = MagicMock()
-        mock_bm25s.return_value.BM25.return_value = mock_retriever
-
-        from el_pipeline.spacy_components.candidates import LELABM25CandidatesComponent
-        component = LELABM25CandidatesComponent(nlp=nlp, top_k=5, use_context=False)
-        component.initialize(kb)
-
-        # Should build normally
-        mock_retriever.index.assert_called_once()
-        # No save/load calls
-        mock_retriever.save.assert_not_called()
-        mock_bm25s.return_value.BM25.load.assert_not_called()
-
-
 class TestLELADenseCache:
     """Tests for LELADenseCandidatesComponent caching."""
 
@@ -217,7 +68,7 @@ class TestLELADenseCache:
             [0.4, 0.5, 0.6],
             [0.7, 0.8, 0.9],
         ])
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
@@ -250,7 +101,7 @@ class TestLELADenseCache:
             [0.4, 0.5, 0.6],
             [0.7, 0.8, 0.9],
         ])
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
 
@@ -302,7 +153,7 @@ class TestLELADenseCache:
 
         mock_model = MagicMock()
         mock_model.encode.return_value = np.array([[0.1, 0.2, 0.3]] * 3)
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
@@ -515,45 +366,3 @@ class TestCacheInvalidation:
         finally:
             os.unlink(path)
 
-    @patch("el_pipeline.spacy_components.candidates._get_stemmer")
-    @patch("el_pipeline.spacy_components.candidates._get_bm25s")
-    def test_lela_bm25_different_stemmer_different_cache(
-        self, mock_bm25s, mock_stemmer, cache_dir, nlp
-    ):
-        """Different stemmer_language produces different cache keys."""
-        data = [
-            {"title": "Barack Obama", "description": "44th US President"},
-        ]
-        path = self._make_kb_file(data)
-
-        try:
-            mock_stemmer_instance = MagicMock()
-            mock_stemmer.return_value.Stemmer.return_value = mock_stemmer_instance
-
-            mock_tokenizer = MagicMock()
-            mock_bm25s.return_value.tokenization.Tokenizer.return_value = mock_tokenizer
-            mock_tokenizer.tokenize.return_value = [("tokens",)]
-
-            mock_retriever = MagicMock()
-            mock_bm25s.return_value.BM25.return_value = mock_retriever
-
-            from el_pipeline.spacy_components.candidates import LELABM25CandidatesComponent
-
-            kb = CustomJSONLKnowledgeBase(path=path)
-
-            comp_en = LELABM25CandidatesComponent(
-                nlp=nlp, top_k=5, use_context=False, stemmer_language="english"
-            )
-            comp_en.initialize(kb, cache_dir=Path(cache_dir))
-
-            comp_fr = LELABM25CandidatesComponent(
-                nlp=nlp, top_k=5, use_context=False, stemmer_language="french"
-            )
-            comp_fr.initialize(kb, cache_dir=Path(cache_dir))
-
-            # Should have two different cache directories
-            index_dir = os.path.join(cache_dir, "index")
-            lela_dirs = [d for d in os.listdir(index_dir) if d.startswith("lela_bm25_")]
-            assert len(lela_dirs) == 2
-        finally:
-            os.unlink(path)

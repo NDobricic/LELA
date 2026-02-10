@@ -60,12 +60,14 @@ class TestSentenceTransformerPool:
 
         clear_sentence_transformer_instances(force=True)
 
-        model1 = get_sentence_transformer_instance("model-a", device="cuda")
-        model2 = get_sentence_transformer_instance("model-a", device="cuda")
+        model1, cached1 = get_sentence_transformer_instance("model-a", device="cuda")
+        model2, cached2 = get_sentence_transformer_instance("model-a", device="cuda")
 
         # Should only create once
         assert mock_st_module.SentenceTransformer.call_count == 1
         assert model1 is model2
+        assert not cached1
+        assert cached2
 
     @patch("el_pipeline.lela.llm_pool._get_sentence_transformers")
     @patch.dict("sys.modules", {"torch": MagicMock()})
@@ -160,12 +162,14 @@ class TestVLLMInstanceManagement:
 
         clear_vllm_instances(force=True)
 
-        llm1 = get_vllm_instance("model-a", tensor_parallel_size=1)
-        llm2 = get_vllm_instance("model-a", tensor_parallel_size=1)
+        llm1, cached1 = get_vllm_instance("model-a", tensor_parallel_size=1)
+        llm2, cached2 = get_vllm_instance("model-a", tensor_parallel_size=1)
 
         # Should only create once
         assert mock_vllm.LLM.call_count == 1
         assert llm1 is llm2
+        assert not cached1
+        assert cached2
 
     @patch("el_pipeline.lela.llm_pool._get_vllm")
     def test_different_configs_create_different_instances(self, mock_get_vllm):

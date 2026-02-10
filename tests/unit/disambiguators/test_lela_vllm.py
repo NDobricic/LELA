@@ -54,7 +54,7 @@ class TestLELAvLLMDisambiguatorComponent:
     def test_requires_knowledge_base(self, mock_get_instance, mock_get_vllm, nlp):
         mock_vllm = MagicMock()
         mock_get_vllm.return_value = (mock_vllm, MagicMock())
-        mock_get_instance.return_value = MagicMock()
+        mock_get_instance.return_value = (MagicMock(), False)
 
         from el_pipeline.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
         component = LELAvLLMDisambiguatorComponent(nlp=nlp)
@@ -76,7 +76,7 @@ class TestLELAvLLMDisambiguatorComponent:
         mock_get_vllm.return_value = (mock_vllm, mock_sampling_params)
 
         mock_llm = MagicMock()
-        mock_get_instance.return_value = mock_llm
+        mock_get_instance.return_value = (mock_llm, False)
 
         # LLM returns "answer": 1 (first candidate)
         mock_output = MagicMock()
@@ -105,7 +105,7 @@ class TestLELAvLLMDisambiguatorComponent:
     ):
         mock_vllm = MagicMock()
         mock_get_vllm.return_value = (mock_vllm, MagicMock())
-        mock_get_instance.return_value = MagicMock()
+        mock_get_instance.return_value = (MagicMock(), False)
 
         from el_pipeline.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
         component = LELAvLLMDisambiguatorComponent(nlp=nlp)
@@ -126,7 +126,7 @@ class TestLELAvLLMDisambiguatorComponent:
     ):
         mock_vllm = MagicMock()
         mock_get_vllm.return_value = (mock_vllm, MagicMock())
-        mock_get_instance.return_value = MagicMock()
+        mock_get_instance.return_value = (MagicMock(), False)
 
         from el_pipeline.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
         component = LELAvLLMDisambiguatorComponent(nlp=nlp, add_none_candidate=False)
@@ -153,7 +153,7 @@ class TestLELAvLLMDisambiguatorComponent:
         mock_get_vllm.return_value = (mock_vllm, MagicMock())
 
         mock_llm = MagicMock()
-        mock_get_instance.return_value = mock_llm
+        mock_get_instance.return_value = (mock_llm, False)
 
         # LLM returns "answer": 0 (none option)
         mock_output = MagicMock()
@@ -183,7 +183,7 @@ class TestLELAvLLMDisambiguatorComponent:
         mock_get_vllm.return_value = (mock_vllm, MagicMock())
 
         mock_llm = MagicMock()
-        mock_get_instance.return_value = mock_llm
+        mock_get_instance.return_value = (mock_llm, False)
 
         # LLM returns "answer": 2 (second candidate)
         mock_output = MagicMock()
@@ -214,7 +214,7 @@ class TestLELAvLLMDisambiguatorComponent:
         mock_get_vllm.return_value = (mock_vllm, MagicMock())
 
         mock_llm = MagicMock()
-        mock_get_instance.return_value = mock_llm
+        mock_get_instance.return_value = (mock_llm, False)
 
         # LLM returns answer out of range
         mock_output = MagicMock()
@@ -244,7 +244,7 @@ class TestLELAvLLMDisambiguatorComponent:
         mock_get_vllm.return_value = (mock_vllm, MagicMock())
 
         mock_llm = MagicMock()
-        mock_get_instance.return_value = mock_llm
+        mock_get_instance.return_value = (mock_llm, False)
 
         # LLM returns unparseable output
         mock_output = MagicMock()
@@ -275,7 +275,7 @@ class TestLELAvLLMDisambiguatorComponent:
         mock_get_vllm.return_value = (mock_vllm, MagicMock())
 
         mock_llm = MagicMock()
-        mock_get_instance.return_value = mock_llm
+        mock_get_instance.return_value = (mock_llm, False)
         mock_llm.generate.side_effect = Exception("LLM error")
 
         from el_pipeline.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
@@ -330,7 +330,7 @@ class TestLELAvLLMDisambiguatorConfig:
         # Mock LLM instance with generate method
         mock_llm = MagicMock()
         mock_llm.generate.return_value = [MagicMock(outputs=[MagicMock(text='{"answer": 1}')])]
-        mock_get_instance.return_value = mock_llm
+        mock_get_instance.return_value = (mock_llm, False)
 
         # Create minimal KB
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
@@ -375,7 +375,7 @@ class TestLELAvLLMDisambiguatorConfig:
         # Mock LLM instance with generate method
         mock_llm = MagicMock()
         mock_llm.generate.return_value = [MagicMock(outputs=[MagicMock(text='{"answer": 1}')])]
-        mock_get_instance.return_value = mock_llm
+        mock_get_instance.return_value = (mock_llm, False)
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.write('{"title": "Test", "description": "Test"}\n')
@@ -412,7 +412,7 @@ class TestLELAvLLMDisambiguatorConfig:
     def test_custom_system_prompt(self, mock_get_instance, mock_get_vllm):
         mock_vllm = MagicMock()
         mock_get_vllm.return_value = (mock_vllm, MagicMock())
-        mock_get_instance.return_value = MagicMock()
+        mock_get_instance.return_value = (MagicMock(), False)
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.write('{"title": "Test", "description": "Test"}\n')

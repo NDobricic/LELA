@@ -73,16 +73,42 @@ pytest tests/unit -m "not slow"
 
 ```
 tests/
-├── conftest.py           # Shared fixtures
-├── unit/                 # Unit tests (fast, isolated)
-│   ├── test_types.py     # Data type tests
-│   ├── test_config.py    # Configuration tests
-│   ├── test_loaders.py   # Loader tests
-│   └── test_context.py   # Context extraction tests
-├── integration/          # Integration tests
-│   └── test_pipeline.py  # Full pipeline tests
-└── data/                 # Test data files
-    └── sample_kb.jsonl   # Sample knowledge base
+├── conftest.py                     # Shared fixtures
+├── unit/                           # Unit tests (fast, isolated)
+│   ├── test_types.py               # Data type tests
+│   ├── test_config.py              # Configuration tests
+│   ├── test_context.py             # Context extraction tests
+│   ├── loaders/                    # Loader tests
+│   │   └── test_text_loader.py
+│   ├── ner/                        # NER component tests
+│   │   ├── test_simple_ner.py
+│   │   └── test_lela_gliner.py
+│   ├── candidates/                 # Candidate generator tests
+│   │   ├── test_fuzzy_candidate.py
+│   │   ├── test_lela_dense.py
+│   │   └── test_candidate_cache.py
+│   ├── rerankers/                  # Reranker tests
+│   │   ├── test_lela_embedder.py
+│   │   ├── test_lela_embedder_vllm.py
+│   │   └── test_lela_cross_encoder_vllm.py
+│   ├── disambiguators/             # Disambiguator tests
+│   │   ├── test_first_disambiguator.py
+│   │   └── test_lela_vllm.py
+│   ├── knowledge_bases/            # KB tests
+│   │   ├── test_custom_kb.py
+│   │   └── test_kb_cache.py
+│   └── lela/                       # LELA module tests
+│       ├── test_config.py
+│       ├── test_llm_pool.py
+│       └── test_prompts.py
+├── integration/                    # Integration tests
+│   ├── test_pipeline.py            # Full pipeline tests
+│   ├── test_cli.py                 # CLI integration tests
+│   ├── test_app.py                 # Web app tests
+│   ├── test_cache_integration.py   # Cache integration tests
+│   └── test_sentence_transformer.py
+└── slow/                           # Slow tests (model downloads)
+    └── test_real_models.py
 ```
 
 ---

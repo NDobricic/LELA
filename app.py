@@ -25,6 +25,8 @@ from el_pipeline.lela.config import (
     AVAILABLE_LLM_MODELS as LLM_MODEL_CHOICES,
     AVAILABLE_EMBEDDING_MODELS as EMBEDDING_MODEL_CHOICES,
     AVAILABLE_CROSS_ENCODER_MODELS as CROSS_ENCODER_MODEL_CHOICES,
+    AVAILABLE_VLLM_RERANKER_MODELS as VLLM_RERANKER_MODEL_CHOICES,
+    DEFAULT_VLLM_RERANKER_MODEL,
     DEFAULT_GLINER_MODEL,
 )
 
@@ -82,7 +84,7 @@ def get_available_components() -> Dict[str, List[str]]:
         "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
         "ner": ["simple", "spacy", "gliner"],
         "candidates": ["none", "fuzzy", "bm25", "lela_dense", "lela_openai_api_dense"],
-        "rerankers": ["none", "cross_encoder", "vllm_api_client", "llama_server"],
+        "rerankers": ["none", "cross_encoder", "vllm_api_client", "llama_server", "lela_embedder_transformers", "lela_embedder_vllm", "lela_cross_encoder_vllm"],
         "disambiguators": available_disambiguators,
         "knowledge_bases": ["custom"],
     }
@@ -472,6 +474,63 @@ def format_error_output(error_title: str, error_message: str) -> Tuple[str, str,
     return html_output, stats, result
 
 
+def _run_with_heartbeat(fn, progress_fn, initial_progress, initial_desc):
+    """Run fn(report) in a background thread, sending progress heartbeats.
+
+    Blocks until fn completes.  Calls progress_fn every 0.5s to keep
+    Gradio's SSE connection alive (without yielding, which would re-render
+    output components and reset the UI timer).
+
+    fn receives a report(progress_value, description) callback for updates.
+    Returns fn's return value.  Re-raises any exception from fn.
+    """
+    import queue as _q
+    q = _q.Queue()
+    result_holder = []
+    error_holder = []
+
+    def report(prog, desc):
+        q.put((prog, desc))
+
+    def _worker():
+        try:
+            r = fn(report)
+            result_holder.append(r)
+        except Exception as e:
+            error_holder.append(e)
+        finally:
+            q.put(None)
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+
+    last_progress = initial_progress
+    last_desc = initial_desc
+    while True:
+        try:
+            msg = q.get(timeout=0.5)
+        except _q.Empty:
+            try:
+                progress_fn(last_progress, desc=last_desc)
+            except Exception:
+                pass
+            continue
+        if msg is None:
+            break
+        last_progress = msg[0]
+        last_desc = msg[1]
+        try:
+            progress_fn(msg[0], desc=msg[1])
+        except Exception:
+            pass
+
+    worker.join()
+
+    if error_holder:
+        raise error_holder[0]
+    return result_holder[0] if result_holder else None
+
+
 def run_pipeline(
     text_input: str,
     file_input: Optional[gr.File],
@@ -530,7 +589,10 @@ def run_pipeline(
     if not kb_file:
         from el_pipeline.knowledge_bases.yago_downloader import ensure_yago_kb
 
-        kb_path = ensure_yago_kb()
+        kb_path = _run_with_heartbeat(
+            lambda report: ensure_yago_kb(),
+            progress, 0.05, "Resolving knowledge base...",
+        )
     else:
         kb_path = kb_file.name
 
@@ -579,6 +641,10 @@ def run_pipeline(
     reranker_params = {"top_k": reranker_top_k}
     if reranker_type == "lela_embedder":
         reranker_params["model_name"] = reranker_embedding_model
+    if reranker_type in ("lela_embedder_transformers", "lela_embedder_vllm"):
+        reranker_params["model_name"] = reranker_embedding_model
+    if reranker_type == "lela_cross_encoder_vllm":
+        reranker_params["model_name"] = reranker_cross_encoder_model
     if reranker_type == "cross_encoder":
         reranker_params["model_name"] = reranker_cross_encoder_model
     if reranker_type == "vllm_api_client":
@@ -636,16 +702,15 @@ def run_pipeline(
     try:
         config = PipelineConfig.from_dict(config_dict)
 
-        # Progress callback for initialization (maps 0-1 to 0.15-0.35)
-        def init_progress_callback(local_progress: float, description: str):
-            actual_progress = 0.15 + local_progress * 0.2
-            progress(actual_progress, desc=description)
-            # Check for cancellation during progress updates
-            if _cancel_event.is_set():
-                raise InterruptedError("Pipeline cancelled by user")
+        def _init_pipeline(report):
+            def init_progress_callback(local_progress: float, description: str):
+                report(0.15 + local_progress * 0.2, description)
+                if _cancel_event.is_set():
+                    raise InterruptedError("Pipeline cancelled by user")
+            return ELPipeline(config, progress_callback=init_progress_callback, cancel_event=_cancel_event)
 
-        pipeline = ELPipeline(
-            config, progress_callback=init_progress_callback, cancel_event=_cancel_event
+        pipeline = _run_with_heartbeat(
+            _init_pipeline, progress, 0.15, "Initializing pipeline...",
         )
     except InterruptedError:
         logger.info("Pipeline cancelled during initialization")
@@ -678,8 +743,11 @@ def run_pipeline(
                 f.write(text_input)
                 input_path = f.name
 
-        # Load document using the pipeline's loader
-        docs = list(pipeline.loader.load(input_path))
+        # Load document (in background thread to keep SSE alive for large files)
+        docs = _run_with_heartbeat(
+            lambda report: list(pipeline.loader.load(input_path)),
+            progress, 0.4, "Loading document...",
+        )
 
         if not file_input:
             os.unlink(input_path)
@@ -705,52 +773,21 @@ def run_pipeline(
         progress(0.45, desc="Processing document...")
         yield "", "*Processing document...*", {}, no_tab_switch
 
-        # Run pipeline in a thread so the Gradio event loop stays responsive
-        # and progress bar polls keep working during CPU-bound processing.
-        import queue, threading
+        def _run_processing(report):
+            def progress_callback(local_progress: float, description: str):
+                report(0.45 + local_progress * 0.4, description)
+                if _cancel_event.is_set():
+                    raise InterruptedError("Pipeline cancelled by user")
+            return pipeline.process_document_with_progress(
+                doc,
+                progress_callback=progress_callback,
+                base_progress=0.0,
+                progress_range=1.0,
+            )
 
-        progress_queue: queue.Queue = queue.Queue()
-        result_holder: list = []
-        error_holder: list = []
-
-        def progress_callback(local_progress: float, description: str):
-            actual_progress = 0.45 + local_progress * 0.4
-            progress_queue.put((actual_progress, description))
-            if _cancel_event.is_set():
-                raise InterruptedError("Pipeline cancelled by user")
-
-        def run_processing():
-            try:
-                r = pipeline.process_document_with_progress(
-                    doc,
-                    progress_callback=progress_callback,
-                    base_progress=0.0,
-                    progress_range=1.0,
-                )
-                result_holder.append(r)
-            except Exception as e:
-                error_holder.append(e)
-            finally:
-                progress_queue.put(None)  # sentinel
-
-        worker = threading.Thread(target=run_processing, daemon=True)
-        worker.start()
-
-        # Drain progress updates, forwarding them to Gradio
-        while True:
-            try:
-                msg = progress_queue.get(timeout=0.25)
-            except queue.Empty:
-                continue
-            if msg is None:
-                break
-            progress(msg[0], desc=msg[1])
-
-        worker.join()
-
-        if error_holder:
-            raise error_holder[0]
-        result = result_holder[0]
+        result = _run_with_heartbeat(
+            _run_processing, progress, 0.45, "Processing document...",
+        )
 
     except InterruptedError:
         logger.info("Pipeline cancelled during processing")
@@ -832,11 +869,18 @@ def update_cand_params(cand_choice: str):
 
 def update_reranker_params(reranker_choice: str):
     """Show/hide reranker-specific parameters based on selection."""
-    show_cross_encoder_model = reranker_choice == "cross_encoder"
-    show_embedding_model = reranker_choice == "lela_embedder"
+    show_cross_encoder_model = reranker_choice in ("cross_encoder", "lela_cross_encoder_vllm")
+    show_embedding_model = reranker_choice in ("lela_embedder_transformers", "lela_embedder_vllm")
     show_vllm_api_client = reranker_choice in ("vllm_api_client", "llama_server")
+    # Use different model lists for vLLM vs transformers cross-encoder
+    if reranker_choice == "lela_cross_encoder_vllm":
+        ce_choices = [(m[1], m[0]) for m in VLLM_RERANKER_MODEL_CHOICES]
+        ce_default = DEFAULT_VLLM_RERANKER_MODEL
+    else:
+        ce_choices = [(m[1], m[0]) for m in CROSS_ENCODER_MODEL_CHOICES]
+        ce_default = "tomaarsen/Qwen3-Reranker-4B-seq-cls"
     return (
-        gr.update(visible=show_cross_encoder_model),
+        gr.update(visible=show_cross_encoder_model, choices=ce_choices, value=ce_default),
         gr.update(visible=show_embedding_model),
         gr.update(visible=show_vllm_api_client),
     )

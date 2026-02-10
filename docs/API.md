@@ -270,23 +270,6 @@ nlp.add_pipe("el_pipeline_ner_filter")
 
 ### Candidate Generation Components
 
-#### `el_pipeline_lela_bm25_candidates`
-
-BM25 retrieval using bm25s library with stemming.
-
-**Config Options:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `top_k` | int | 64 | Maximum candidates |
-| `use_context` | bool | True | Include context in query |
-| `stemmer_language` | str | "english" | Stemmer language |
-
-**Requires initialization:**
-```python
-component = nlp.add_pipe("el_pipeline_lela_bm25_candidates")
-component.initialize(kb)
-```
-
 #### `el_pipeline_lela_dense_candidates`
 
 Dense retrieval using SentenceTransformers and FAISS.
@@ -297,7 +280,7 @@ Dense retrieval using SentenceTransformers and FAISS.
 | `model_name` | str | LELA default | Embedding model |
 | `top_k` | int | 64 | Maximum candidates |
 | `device` | str | None | Device override (e.g., "cuda", "cpu") |
-| `use_context` | bool | True | Include context in query |
+| `use_context` | bool | False | Include context in query |
 
 #### `el_pipeline_fuzzy_candidates`
 
@@ -319,9 +302,9 @@ Standard BM25 using rank-bm25 library.
 
 ### Reranker Components
 
-#### `el_pipeline_lela_embedder_reranker`
+#### `el_pipeline_lela_embedder_transformers_reranker`
 
-Embedding-based cosine similarity reranking with marked mentions.
+Bi-encoder reranker using SentenceTransformers. Uses cosine similarity between query and candidate embeddings.
 
 **Config Options:**
 | Parameter | Type | Default | Description |
@@ -329,6 +312,26 @@ Embedding-based cosine similarity reranking with marked mentions.
 | `model_name` | str | LELA default | Embedding model |
 | `top_k` | int | 10 | Candidates to keep |
 | `device` | str | None | Device override (e.g., "cuda", "cpu") |
+
+#### `el_pipeline_lela_embedder_vllm_reranker`
+
+Bi-encoder reranker using vLLM with task="embed". Manual L2 normalization of embeddings.
+
+**Config Options:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model_name` | str | LELA default | Embedding model |
+| `top_k` | int | 10 | Candidates to keep |
+
+#### `el_pipeline_lela_cross_encoder_vllm_reranker`
+
+Cross-encoder reranker using vLLM `.score()` API with the Qwen3-Reranker-seq-cls model variant.
+
+**Config Options:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model_name` | str | LELA default | Cross-encoder model |
+| `top_k` | int | 10 | Candidates to keep |
 
 #### `el_pipeline_cross_encoder_reranker`
 
@@ -417,12 +420,6 @@ Select first candidate.
 
 **Requires initialization:** Yes (needs KB reference)
 
-#### `el_pipeline_popularity_disambiguator`
-
-Select by highest score (first in sorted list).
-
-**Requires initialization:** Yes (needs KB reference)
-
 ## Data Types
 
 All core data types are defined in `el_pipeline/types.py`.
@@ -444,7 +441,7 @@ doc = Document(
 **Attributes:**
 | Attribute | Type | Description |
 |-----------|------|-------------|
-| `id` | str | Unique document identifier |
+| `id` | Optional[str] | Unique document identifier |
 | `text` | str | Document text content |
 | `meta` | Dict | Optional metadata dictionary |
 
@@ -459,7 +456,7 @@ entity = Entity(
     id="Q937",
     title="Albert Einstein",
     description="German-born theoretical physicist",
-    meta={"birth_year": 1879}
+    metadata={"birth_year": 1879}
 )
 ```
 
@@ -468,8 +465,8 @@ entity = Entity(
 |-----------|------|-------------|
 | `id` | str | Unique entity identifier |
 | `title` | str | Entity name/title |
-| `description` | str | Entity description |
-| `meta` | Dict | Optional metadata |
+| `description` | Optional[str] | Entity description |
+| `metadata` | Dict | Optional metadata dictionary |
 
 ### Candidate
 
@@ -489,26 +486,8 @@ candidate = Candidate(
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `entity_id` | str | Entity identifier in KB |
-| `score` | float | Relevance score |
-| `description` | str | Entity description |
-
-### LELA Candidate Format
-
-Internally, spaCy components use LELA format for candidates:
-
-```python
-# List of (title, description) tuples
-candidates = [
-    ("Albert Einstein", "German-born theoretical physicist"),
-    ("Einstein Bros. Bagels", "American bagel chain"),
-]
-```
-
-Convert to Candidate objects for output:
-```python
-from el_pipeline.types import tuples_to_candidates
-candidates = tuples_to_candidates(tuples_list)
-```
+| `score` | Optional[float] | Relevance score |
+| `description` | Optional[str] | Entity description |
 
 ## Configuration
 
@@ -519,24 +498,28 @@ candidates = tuples_to_candidates(tuples_list)
 | Config Name | spaCy Factory |
 |-------------|---------------|
 | **NER** | |
-| `lela_gliner` | `el_pipeline_lela_gliner` |
 | `simple` | `el_pipeline_simple` |
 | `gliner` | `el_pipeline_gliner` |
 | `spacy` | Built-in NER + `el_pipeline_ner_filter` |
 | **Candidate Generators** | |
-| `lela_bm25` | `el_pipeline_lela_bm25_candidates` |
 | `lela_dense` | `el_pipeline_lela_dense_candidates` |
 | `fuzzy` | `el_pipeline_fuzzy_candidates` |
 | `bm25` | `el_pipeline_bm25_candidates` |
 | **Rerankers** | |
-| `lela_embedder` | `el_pipeline_lela_embedder_reranker` |
+| `lela_embedder_transformers` | `el_pipeline_lela_embedder_transformers_reranker` |
+| `lela_embedder_vllm` | `el_pipeline_lela_embedder_vllm_reranker` |
+| `lela_cross_encoder_vllm` | `el_pipeline_lela_cross_encoder_vllm_reranker` |
 | `cross_encoder` | `el_pipeline_cross_encoder_reranker` |
+| `vllm_api_client` | `el_pipeline_vllm_api_client_reranker` |
+| `llama_server` | `el_pipeline_llama_server_reranker` |
 | `none` | `el_pipeline_noop_reranker` |
 | **Disambiguators** | |
 | `lela_vllm` | `el_pipeline_lela_vllm_disambiguator` |
 | `lela_transformers` | `el_pipeline_lela_transformers_disambiguator` |
+| `lela_openai_api` | `el_pipeline_lela_openai_api_disambiguator` |
 | `first` | `el_pipeline_first_disambiguator` |
-| `popularity` | `el_pipeline_popularity_disambiguator` |
+
+**Note:** The `el_pipeline_lela_gliner` factory is registered and can be used directly with `nlp.add_pipe()`, but is not yet available as a config name through `ELPipeline`.
 
 #### Loaders (Registry-based)
 
@@ -575,7 +558,6 @@ The `json` and `jsonl` loaders support a `text_field` parameter to customize whi
 | Name | Parameters | Description |
 |------|------------|-------------|
 | `custom` | `path`, `cache_dir` | Custom JSONL KB (supports persistent caching) |
-| `lela_jsonl` | `path`, `title_field`, `description_field` | LELA-format JSONL KB |
 
 ## Context Extraction
 
@@ -643,7 +625,7 @@ pipeline = ELPipeline(config, progress_callback=init_callback)
 # Init 15%: Initializing document loader...
 # Init 20%: Building spaCy pipeline...
 # Init 25%: Loading NER model (lela_gliner)...
-# Init 45%: Loading candidate generator (lela_bm25)...
+# Init 45%: Loading candidate generator (lela_dense)...
 # Init 75%: Loading disambiguator (lela_vllm)...
 # Init 100%: Pipeline initialization complete
 ```
@@ -859,7 +841,7 @@ kb = CustomJSONLKnowledgeBase(path="entities.jsonl")
 # Get entity by ID
 entity = kb.get_entity("Q937")
 
-# Search entities
+# Fuzzy search entities by title
 results = kb.search("Einstein", top_k=10)
 
 # Iterate all entities
@@ -873,7 +855,7 @@ for entity in kb.all_entities():
 config_dict = {
     "loader": {"name": "text"},
     "ner": {
-        "name": "lela_gliner",
+        "name": "gliner",
         "params": {
             "model_name": "numind/NuNER_Zero-span",
             "labels": ["person", "organization", "location"],
@@ -881,11 +863,11 @@ config_dict = {
         }
     },
     "candidate_generator": {
-        "name": "lela_bm25",
+        "name": "lela_dense",
         "params": {"top_k": 64, "use_context": True}
     },
     "reranker": {
-        "name": "lela_embedder",
+        "name": "lela_embedder_transformers",
         "params": {
             "model_name": "Qwen/Qwen3-Embedding-4B",
             "top_k": 10
@@ -900,7 +882,7 @@ config_dict = {
         }
     },
     "knowledge_base": {
-        "name": "lela_jsonl",
+        "name": "custom",
         "params": {"path": "entities.jsonl"}
     }
 }

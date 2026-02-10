@@ -85,7 +85,9 @@ COMPONENT_DEFAULT_MEMORY: Dict[str, float] = {
     # Rerankers
     "none": 0.0,
     "cross_encoder": 0.5,
-    "lela_embedder": 10.0,
+    "lela_embedder_transformers": 10.0,
+    "lela_embedder_vllm": 10.0,
+    "lela_cross_encoder_vllm": 10.0,
     # Disambiguators
     "first": 0.0,
     "popularity": 0.0,
@@ -264,10 +266,15 @@ def estimate_component_memory(
         model = params.get("model_name", "cross-encoder/ms-marco-MiniLM-L-6-v2")
         return estimate_model_memory(model, "cross_encoder"), model
 
-    # Embedder reranker
-    if component_name == "lela_embedder":
+    # Embedder reranker (transformers or vLLM)
+    if component_name in ("lela_embedder_transformers", "lela_embedder_vllm"):
         model = params.get("model_name", "Qwen/Qwen3-Embedding-4B")
         return estimate_model_memory(model, "embedding"), model
+
+    # Cross-encoder vLLM reranker
+    if component_name == "lela_cross_encoder_vllm":
+        model = params.get("model_name", "tomaarsen/Qwen3-Reranker-4B-seq-cls")
+        return estimate_model_memory(model, "llm"), model
 
     # vLLM disambiguators
     if component_name in ("lela_vllm", "lela_transformers"):
@@ -407,10 +414,15 @@ def check_memory_requirements(
             # vLLM will try to use 90% of total VRAM, leaving 10% for other models
             # But we load other models first, so they reduce what vLLM can claim
 
-            # Check if LLM disambiguator is used
+            # Check if any component uses vLLM (disambiguator or reranker)
             disambig_config = config_dict.get("disambiguator", {})
             disambig_name = disambig_config.get("name", "") if disambig_config else ""
-            uses_vllm = disambig_name in ("lela_vllm", "lela_transformers")
+            reranker_config = config_dict.get("reranker", {})
+            reranker_name_check = reranker_config.get("name", "") if reranker_config else ""
+            uses_vllm = (
+                disambig_name in ("lela_vllm", "lela_transformers")
+                or reranker_name_check in ("lela_cross_encoder_vllm", "lela_embedder_vllm")
+            )
 
             if uses_vllm:
                 # vLLM claims 90% of total VRAM for itself

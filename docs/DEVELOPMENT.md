@@ -28,11 +28,11 @@ The EL Pipeline uses two extension mechanisms:
 │  ├── Loaders                  │  ├── NER                      │
 │  │   (text, pdf, json...)     │  │   (lela_gliner, simple...) │
 │  └── Knowledge Bases          │  ├── Candidates               │
-│      (custom, lela_jsonl...)  │  │   (bm25, fuzzy, dense...)  │
+│      (custom...)              │  │   (bm25, fuzzy, dense...)  │
 │                               │  ├── Rerankers                │
 │                               │  │   (embedder, cross_encoder)│
 │                               │  └── Disambiguators           │
-│                               │      (vllm, first, popularity)│
+│                               │      (vllm, transformers, first)│
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -251,7 +251,6 @@ class SQLiteKnowledgeBase:
 | Name | Class | Location |
 |------|-------|----------|
 | `custom` | `CustomJSONLKnowledgeBase` | `el_pipeline/knowledge_bases/custom.py` |
-| `lela_jsonl` | `LELAJSONLKnowledgeBase` | `el_pipeline/knowledge_bases/lela_jsonl.py` |
 
 **Note:** `CustomJSONLKnowledgeBase` supports persistent caching via the `cache_dir` parameter. When provided, parsed KB data is cached to disk and reused on subsequent loads, significantly reducing initialization time for large knowledge bases.
 
@@ -523,8 +522,8 @@ All component types can be combined freely. Here are some recommended combinatio
 
 | Stage | Component | Notes |
 |-------|-----------|-------|
-| NER | `lela_gliner` | Zero-shot, good accuracy |
-| Candidates | `lela_bm25` | Fast BM25 with stemming |
+| NER | `gliner` | Zero-shot, good accuracy |
+| Candidates | `bm25` | Fast keyword-based retrieval |
 | Reranker | `none` | Skip for speed |
 | Disambiguator | `first` | Select first candidate |
 
@@ -532,9 +531,9 @@ All component types can be combined freely. Here are some recommended combinatio
 
 | Stage | Component | Notes |
 |-------|-----------|-------|
-| NER | `lela_gliner` | Zero-shot NER |
-| Candidates | `lela_bm25` | 64 candidates |
-| Reranker | `lela_embedder` | Reduce to 10 |
+| NER | `gliner` | Zero-shot NER |
+| Candidates | `lela_dense` | 64 candidates |
+| Reranker | `lela_embedder_transformers` | Reduce to 10 |
 | Disambiguator | `lela_vllm` | LLM disambiguation |
 
 ---
@@ -585,8 +584,8 @@ The `ELPipeline` maps config names to spaCy factory names:
 ```python
 # In el_pipeline/pipeline.py
 NER_COMPONENT_MAP = {
-    "lela_gliner": "el_pipeline_lela_gliner",
     "simple": "el_pipeline_simple",
+    "gliner": "el_pipeline_gliner",
     # ...
 }
 ```

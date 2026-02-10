@@ -143,7 +143,7 @@ Each NER option maps to a spaCy pipeline factory:
 #### LELA GLiNER
 - **spaCy Factory:** `el_pipeline_lela_gliner`
 - **model_name**: Default `numind/NuNER_Zero-span`
-- **labels**: LELA default labels (person, organization, location, event, work of art, product)
+- **labels**: LELA default labels (person, organization, location)
 - **threshold**: Detection threshold (default: 0.5)
 
 ### Candidate Generation Options
@@ -159,16 +159,15 @@ Each NER option maps to a spaCy pipeline factory:
 - Keyword-based retrieval on entity descriptions
 
 #### Dense
-- **spaCy Factory:** `el_pipeline_fuzzy_candidates` (with sentence-transformers)
+- **spaCy Factory:** `el_pipeline_lela_dense_candidates`
 - **model_name**: Embedding model (default: `all-MiniLM-L6-v2`)
 - **top_k**: Number of candidates
 - Uses FAISS for similarity search
 
 #### LELA BM25
-- **spaCy Factory:** `el_pipeline_lela_bm25_candidates`
-- **top_k**: Number of candidates (default: 64)
-- **use_context**: Include mention context in query
-- Uses bm25s with stemming for better matching
+- **spaCy Factory:** `el_pipeline_bm25_candidates`
+- **top_k**: Number of candidates (default: 20)
+- Uses rank-bm25 for keyword-based retrieval
 
 #### LELA Dense
 - **spaCy Factory:** `el_pipeline_lela_dense_candidates`
@@ -192,12 +191,25 @@ Each NER option maps to a spaCy pipeline factory:
 - **model_name**: Cross-encoder model (default: `cross-encoder/ms-marco-MiniLM-L-6-v2`)
 - **top_k**: Number of candidates to keep
 
-#### LELA Embedder
-- **spaCy Factory:** `el_pipeline_lela_embedder_reranker`
-- **Embedding Model**: Selectable from dropdown (same choices as LELA Dense)
+#### LELA Embedder (Transformers)
+- **spaCy Factory:** `el_pipeline_lela_embedder_transformers_reranker`
+- **Embedding Model**: Selectable from dropdown
 - **top_k**: Number of candidates to keep
-- Reranks using cosine similarity with marked mention
-- Uses SentenceTransformer for local embedding computation
+- Bi-encoder reranker using SentenceTransformers
+- Uses cosine similarity between query and candidate embeddings
+
+#### LELA Embedder (vLLM)
+- **spaCy Factory:** `el_pipeline_lela_embedder_vllm_reranker`
+- **Embedding Model**: Selectable from dropdown
+- **top_k**: Number of candidates to keep
+- Bi-encoder reranker using vLLM with task="embed"
+- Manual L2 normalization of embeddings
+
+#### LELA Cross-Encoder (vLLM)
+- **spaCy Factory:** `el_pipeline_lela_cross_encoder_vllm_reranker`
+- **model_name**: Cross-encoder model
+- **top_k**: Number of candidates to keep
+- Cross-encoder reranker using vLLM `.score()` API with the Qwen3-Reranker-seq-cls model variant
 
 ### Disambiguation Options
 
@@ -207,10 +219,6 @@ Each NER option maps to a spaCy pipeline factory:
 #### First
 - **spaCy Factory:** `el_pipeline_first_disambiguator`
 - Selects the first candidate from the list
-
-#### Popularity
-- **spaCy Factory:** `el_pipeline_popularity_disambiguator`
-- Selects the candidate with the highest score
 
 #### LELA vLLM
 - **spaCy Factory:** `el_pipeline_lela_vllm_disambiguator`
@@ -376,7 +384,7 @@ The JSON viewer (collapsible accordion) shows complete results including:
 ## Architecture Notes
 
 The web app is built using:
-- **Gradio 4.0+**: Modern UI framework
+- **Gradio 6.3+**: Modern UI framework
 - **spaCy Pipeline**: All NER/EL operations via spaCy components
 - **Accordion Layout**: Collapsible configuration sections
 - **Reactive Updates**: Components update based on selections
@@ -421,24 +429,24 @@ Better accuracy for production use with larger KBs:
 - **NER**: spacy (en_core_web_sm)
 - **Candidates**: bm25
 - **Reranker**: cross_encoder
-- **Disambiguator**: popularity
+- **Disambiguator**: first
 
 ### Zero-shot
 
 For custom entity types and domain adaptation:
 
 - **NER**: gliner or lela_gliner
-- **Candidates**: dense or lela_bm25
+- **Candidates**: lela_dense or bm25
 - **Reranker**: none or lela_embedder
-- **Disambiguator**: popularity or lela_vllm
+- **Disambiguator**: first or lela_vllm
 
 ### Full LELA Pipeline
 
 Maximum accuracy with LLM disambiguation:
 
 - **NER**: lela_gliner (threshold: 0.5)
-- **Candidates**: lela_bm25 (top_k: 64)
-- **Reranker**: lela_embedder (top_k: 10, Qwen3-Embed-4B)
+- **Candidates**: lela_dense (top_k: 64)
+- **Reranker**: lela_embedder_transformers (top_k: 10, Qwen3-Embed-4B)
 - **Disambiguator**: lela_vllm (Qwen3-4B)
 
 **VRAM Requirements:**

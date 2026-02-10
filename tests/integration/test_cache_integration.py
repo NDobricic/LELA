@@ -131,6 +131,7 @@ class TestKBCacheInvalidationIntegration:
     def test_clean_cache_rebuilds(self, temp_cache_dir: str, temp_jsonl_kb: str):
         """Deleting the cache directory forces rebuild."""
         import shutil
+        from el_pipeline.knowledge_bases.custom import clear_kb_cache
 
         config_dict = {
             "loader": {"name": "text"},
@@ -145,10 +146,11 @@ class TestKBCacheInvalidationIntegration:
         pipeline1 = ELPipeline(config1)
         count1 = len(list(pipeline1.kb.all_entities()))
 
-        # Delete cache contents
+        # Delete cache contents and clear in-memory cache so rebuild is triggered
         kb_cache = os.path.join(temp_cache_dir, "kb")
         if os.path.isdir(kb_cache):
             shutil.rmtree(kb_cache)
+        clear_kb_cache()
 
         # Rebuild
         config2 = PipelineConfig.from_dict(config_dict)

@@ -46,7 +46,7 @@ class TestLELAConfig:
         assert len(config.SPAN_CLOSE) == 1
 
     def test_not_an_entity_value(self):
-        assert config.NOT_AN_ENTITY == "None"
+        assert config.NOT_AN_ENTITY == ""
 
     def test_task_descriptions_are_nonempty(self):
         assert len(config.RETRIEVER_TASK) > 0

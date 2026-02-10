@@ -41,7 +41,7 @@ class TestLELAEmbedderRerankerComponent:
             [0.5, 0.6, 0.7],  # E4
             [0.6, 0.7, 0.8],  # E5
         ])
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
@@ -61,7 +61,7 @@ class TestLELAEmbedderRerankerComponent:
     ):
         mock_model = MagicMock()
         mock_model.encode.return_value = np.array([[0.1, 0.2, 0.3]] * 6)
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=2)
@@ -79,7 +79,7 @@ class TestLELAEmbedderRerankerComponent:
         self, mock_get_st, nlp
     ):
         mock_model = MagicMock()
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
         candidates = [Candidate(entity_id="E1", description="Desc 1")]
 
         from el_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
@@ -99,7 +99,7 @@ class TestLELAEmbedderRerankerComponent:
         self, mock_get_st, nlp
     ):
         mock_model = MagicMock()
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
@@ -127,7 +127,7 @@ class TestLELAEmbedderRerankerComponent:
             [0.3, 0.7, 0.0],  # E4
             [0.4, 0.6, 0.0],  # E5
         ])
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
@@ -151,7 +151,7 @@ class TestLELAEmbedderRerankerComponent:
             encode_calls.append(texts)
             return np.array([[0.1, 0.2, 0.3]] * len(texts))
         mock_model.encode.side_effect = capture_encode
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
@@ -182,7 +182,7 @@ class TestLELAEmbedderRerankerComponent:
             encode_calls.append(texts)
             return np.array([[0.1, 0.2, 0.3]] * len(texts))
         mock_model.encode.side_effect = capture_encode
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=2)
@@ -206,7 +206,7 @@ class TestLELAEmbedderRerankerComponent:
     ):
         mock_model = MagicMock()
         mock_model.encode.return_value = np.array([[0.1, 0.2, 0.3]] * 6)
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         from el_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
         reranker = LELAEmbedderRerankerComponent(nlp=nlp, top_k=3)
@@ -234,7 +234,7 @@ class TestLELAEmbedderRerankerComponent:
         mock_model = MagicMock()
         # Mock model.encode to return embeddings (1 query + 10 candidates = 11)
         mock_model.encode.return_value = np.array([[0.5, 0.5]] * 11)
-        mock_get_st.return_value = mock_model
+        mock_get_st.return_value = (mock_model, False)
 
         nlp = spacy.blank("en")
         from el_pipeline.spacy_components.rerankers import LELAEmbedderRerankerComponent
