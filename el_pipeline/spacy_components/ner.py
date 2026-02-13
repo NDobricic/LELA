@@ -58,6 +58,7 @@ def _get_gliner():
         "labels": list(NER_LABELS),
         "threshold": 0.5,
         "context_mode": "sentence",
+        "estimated_vram_gb": 2.0,
     },
 )
 def create_lela_gliner_component(
@@ -67,6 +68,7 @@ def create_lela_gliner_component(
     labels: List[str],
     threshold: float,
     context_mode: str,
+    estimated_vram_gb: float,
 ):
     """Factory for LELA GLiNER NER component."""
     return LELAGLiNERComponent(
@@ -75,6 +77,7 @@ def create_lela_gliner_component(
         labels=labels,
         threshold=threshold,
         context_mode=context_mode,
+        estimated_vram_gb=estimated_vram_gb,
     )
 
 
@@ -93,19 +96,33 @@ class LELAGLiNERComponent:
         labels: Optional[List[str]] = None,
         threshold: float = 0.5,
         context_mode: str = "sentence",
+        estimated_vram_gb: float = 2.0,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.labels = labels if labels is not None else list(NER_LABELS)
         self.threshold = threshold
         self.context_mode = context_mode
+        self.estimated_vram_gb = estimated_vram_gb
+        self.model = None
 
         ensure_context_extension()
 
-        GLiNER = _get_gliner()
-        logger.info(f"Loading LELA GLiNER model: {model_name}")
-        self.model = GLiNER.from_pretrained(model_name)
-        logger.info(f"LELA GLiNER loaded with labels: {self.labels}")
+        logger.info(f"LELA GLiNER initialized with labels: {self.labels}")
+
+    def _ensure_model_loaded(self):
+        if self.model is not None:
+            return
+        from el_pipeline.lela.llm_pool import get_generic_instance
+
+        key = f"gliner:{self.model_name}"
+
+        def loader():
+            GLiNER = _get_gliner()
+            logger.info(f"Loading GLiNER model: {self.model_name}")
+            return GLiNER.from_pretrained(self.model_name)
+
+        self.model, _ = get_generic_instance(key, loader, self.estimated_vram_gb)
 
     def __call__(self, doc: Doc) -> Doc:
         """Process document and add entities.
@@ -117,80 +134,89 @@ class LELAGLiNERComponent:
         if not text or not text.strip():
             return doc
 
-        # Chunk long documents to handle GLiNER's token limit
-        # Use ~1500 chars per chunk with 200 char overlap
-        chunk_size = 1500
-        overlap = 200
+        self._ensure_model_loaded()
 
-        all_predictions = []
+        try:
+            # Chunk long documents to handle GLiNER's token limit
+            # Use ~1500 chars per chunk with 200 char overlap
+            chunk_size = 1500
+            overlap = 200
 
-        if len(text) <= chunk_size:
-            # Short text, process directly
-            all_predictions = self.model.predict_entities(
-                text,
-                labels=self.labels,
-                threshold=self.threshold,
-            )
-        else:
-            # Long text, process in chunks
-            start = 0
-            while start < len(text):
-                end = min(start + chunk_size, len(text))
+            all_predictions = []
 
-                # Try to break at sentence boundary
-                if end < len(text):
-                    # Look for sentence end near chunk boundary
-                    for sep in [". ", ".\n", "? ", "!\n", "\n\n"]:
-                        last_sep = text[start:end].rfind(sep)
-                        if last_sep > chunk_size // 2:
-                            end = start + last_sep + len(sep)
-                            break
-
-                chunk_text = text[start:end]
-
-                chunk_predictions = self.model.predict_entities(
-                    chunk_text,
+            if len(text) <= chunk_size:
+                # Short text, process directly
+                all_predictions = self.model.predict_entities(
+                    text,
                     labels=self.labels,
                     threshold=self.threshold,
                 )
+            else:
+                # Long text, process in chunks
+                start = 0
+                while start < len(text):
+                    end = min(start + chunk_size, len(text))
 
-                # Adjust offsets to document-level
-                for pred in chunk_predictions:
-                    pred["start"] += start
-                    pred["end"] += start
-                    all_predictions.append(pred)
+                    # Try to break at sentence boundary
+                    if end < len(text):
+                        # Look for sentence end near chunk boundary
+                        for sep in [". ", ".\n", "? ", "!\n", "\n\n"]:
+                            last_sep = text[start:end].rfind(sep)
+                            if last_sep > chunk_size // 2:
+                                end = start + last_sep + len(sep)
+                                break
 
-                # Move to next chunk with overlap
-                start = end - overlap if end < len(text) else len(text)
+                    chunk_text = text[start:end]
 
-        spans = []
-        for pred in all_predictions:
-            start_char = pred["start"]
-            end_char = pred["end"]
+                    chunk_predictions = self.model.predict_entities(
+                        chunk_text,
+                        labels=self.labels,
+                        threshold=self.threshold,
+                    )
 
-            # Find token boundaries
-            span = doc.char_span(start_char, end_char, alignment_mode="expand")
-            if span is None:
-                continue
+                    # Adjust offsets to document-level
+                    for pred in chunk_predictions:
+                        pred["start"] += start
+                        pred["end"] += start
+                        all_predictions.append(pred)
 
-            # Create span with label
-            label = pred.get("label", "ENT")
-            new_span = Span(doc, span.start, span.end, label=label)
+                    # Move to next chunk with overlap
+                    start = end - overlap if end < len(text) else len(text)
 
-            # Store context
-            context = extract_context(
-                text, start_char, end_char, mode=self.context_mode
+            spans = []
+            for pred in all_predictions:
+                start_char = pred["start"]
+                end_char = pred["end"]
+
+                # Find token boundaries
+                span = doc.char_span(start_char, end_char, alignment_mode="expand")
+                if span is None:
+                    continue
+
+                # Create span with label
+                label = pred.get("label", "ENT")
+                new_span = Span(doc, span.start, span.end, label=label)
+
+                # Store context
+                context = extract_context(
+                    text, start_char, end_char, mode=self.context_mode
+                )
+                new_span._.context = context
+
+                spans.append(new_span)
+
+            # Filter overlapping spans (keep longest)
+            doc.ents = filter_spans(spans)
+
+            logger.debug(
+                f"Extracted {len(doc.ents)} entities from document ({len(text)} chars)"
             )
-            new_span._.context = context
+        finally:
+            from el_pipeline.lela.llm_pool import release_generic
 
-            spans.append(new_span)
+            release_generic(f"gliner:{self.model_name}")
+            self.model = None
 
-        # Filter overlapping spans (keep longest)
-        doc.ents = filter_spans(spans)
-
-        logger.debug(
-            f"Extracted {len(doc.ents)} entities from document ({len(text)} chars)"
-        )
         return doc
 
 
@@ -279,6 +305,7 @@ class SimpleNERComponent:
         "labels": ["person", "organization", "location"],
         "threshold": 0.5,
         "context_mode": "sentence",
+        "estimated_vram_gb": 2.0,
     },
 )
 def create_gliner_component(
@@ -288,6 +315,7 @@ def create_gliner_component(
     labels: List[str],
     threshold: float,
     context_mode: str,
+    estimated_vram_gb: float,
 ):
     """Factory for standard GLiNER component."""
     return GLiNERComponent(
@@ -296,6 +324,7 @@ def create_gliner_component(
         labels=labels,
         threshold=threshold,
         context_mode=context_mode,
+        estimated_vram_gb=estimated_vram_gb,
     )
 
 
@@ -313,18 +342,33 @@ class GLiNERComponent:
         labels: Optional[List[str]] = None,
         threshold: float = 0.5,
         context_mode: str = "sentence",
+        estimated_vram_gb: float = 2.0,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.labels = labels or ["person", "organization", "location"]
         self.threshold = threshold
         self.context_mode = context_mode
+        self.estimated_vram_gb = estimated_vram_gb
+        self.model = None
 
         ensure_context_extension()
 
-        GLiNER = _get_gliner()
-        logger.info(f"Loading GLiNER model: {model_name}")
-        self.model = GLiNER.from_pretrained(model_name)
+        logger.info(f"GLiNER initialized: {model_name}")
+
+    def _ensure_model_loaded(self):
+        if self.model is not None:
+            return
+        from el_pipeline.lela.llm_pool import get_generic_instance
+
+        key = f"gliner:{self.model_name}"
+
+        def loader():
+            GLiNER = _get_gliner()
+            logger.info(f"Loading GLiNER model: {self.model_name}")
+            return GLiNER.from_pretrained(self.model_name)
+
+        self.model, _ = get_generic_instance(key, loader, self.estimated_vram_gb)
 
     def __call__(self, doc: Doc) -> Doc:
         """Process document and add entities."""
@@ -332,30 +376,39 @@ class GLiNERComponent:
         if not text or not text.strip():
             return doc
 
-        predictions = self.model.predict_entities(
-            text,
-            labels=self.labels,
-            threshold=self.threshold,
-        )
+        self._ensure_model_loaded()
 
-        spans = []
-        for pred in predictions:
-            start_char = pred["start"]
-            end_char = pred["end"]
-
-            span = doc.char_span(start_char, end_char, alignment_mode="expand")
-            if span is None:
-                continue
-
-            label = pred.get("label", "ENT")
-            new_span = Span(doc, span.start, span.end, label=label)
-            context = extract_context(
-                text, start_char, end_char, mode=self.context_mode
+        try:
+            predictions = self.model.predict_entities(
+                text,
+                labels=self.labels,
+                threshold=self.threshold,
             )
-            new_span._.context = context
-            spans.append(new_span)
 
-        doc.ents = filter_spans(spans)
+            spans = []
+            for pred in predictions:
+                start_char = pred["start"]
+                end_char = pred["end"]
+
+                span = doc.char_span(start_char, end_char, alignment_mode="expand")
+                if span is None:
+                    continue
+
+                label = pred.get("label", "ENT")
+                new_span = Span(doc, span.start, span.end, label=label)
+                context = extract_context(
+                    text, start_char, end_char, mode=self.context_mode
+                )
+                new_span._.context = context
+                spans.append(new_span)
+
+            doc.ents = filter_spans(spans)
+        finally:
+            from el_pipeline.lela.llm_pool import release_generic
+
+            release_generic(f"gliner:{self.model_name}")
+            self.model = None
+
         return doc
 
 

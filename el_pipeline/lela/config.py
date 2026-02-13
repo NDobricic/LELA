@@ -10,35 +10,32 @@ DEFAULT_LLM_MODEL = "Qwen/Qwen3-4B"
 DEFAULT_EMBEDDER_MODEL = "Qwen/Qwen3-Embedding-4B"
 DEFAULT_RERANKER_MODEL = "tomaarsen/Qwen3-Reranker-4B-seq-cls"
 
-# Available LLM models for disambiguation (model_id, display_name, vram_gb)
+# Available LLM models for disambiguation (model_id, display_name)
 AVAILABLE_LLM_MODELS = [
-    ("Qwen/Qwen3-0.6B", "Qwen3-0.6B (~2GB VRAM)", 2.0),
-    ("Qwen/Qwen3-1.7B", "Qwen3-1.7B (~4GB VRAM)", 4.0),
-    ("Qwen/Qwen3-4B", "Qwen3-4B (~9GB VRAM)", 9.0),
-    ("Qwen/Qwen3-8B", "Qwen3-8B (~18GB VRAM)", 18.0),
-    ("Qwen/Qwen3-14B", "Qwen3-14B (~32GB VRAM)", 32.0),
+    ("Qwen/Qwen3-0.6B", "Qwen3-0.6B"),
+    ("Qwen/Qwen3-1.7B", "Qwen3-1.7B"),
+    ("Qwen/Qwen3-4B", "Qwen3-4B"),
+    ("Qwen/Qwen3-8B", "Qwen3-8B"),
+    ("Qwen/Qwen3-14B", "Qwen3-14B"),
 ]
 
-# Available embedding models (model_id, display_name, vram_gb)
+# Available embedding models (model_id, display_name)
 AVAILABLE_EMBEDDING_MODELS = [
-    # ("sentence-transformers/all-MiniLM-L6-v2", "MiniLM-L6 (~0.3GB)", 0.3),
-    # ("BAAI/bge-base-en-v1.5", "BGE-Base (~0.5GB)", 0.5),
-    ("Qwen/Qwen3-Embedding-0.6B", "Qwen3-Embed-0.6B (~2GB)", 2.0),
-    ("Qwen/Qwen3-Embedding-4B", "Qwen3-Embed-4B (~9GB)", 9.0),
+    ("Qwen/Qwen3-Embedding-0.6B", "Qwen3-Embed-0.6B"),
+    ("Qwen/Qwen3-Embedding-4B", "Qwen3-Embed-4B"),
 ]
 
 # Available cross-encoder models for reranking
 AVAILABLE_CROSS_ENCODER_MODELS = [
-    # ("cross-encoder/ms-marco-TinyBERT-L-2-v2", "TinyBERT (~0.1GB)", 0.1),
-    ("tomaarsen/Qwen3-Reranker-4B-seq-cls", "Qwen3-Reranker-4B (~9GB)", 9.0),
-    ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", "Qwen3-Reranker-0.6B (~2GB)", 2.0),
+    ("tomaarsen/Qwen3-Reranker-4B-seq-cls", "Qwen3-Reranker-4B"),
+    ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", "Qwen3-Reranker-0.6B"),
 ]
 
 # vLLM reranker models (seq-cls variants, used with vLLM .score() API)
 DEFAULT_VLLM_RERANKER_MODEL = "tomaarsen/Qwen3-Reranker-4B-seq-cls"
 AVAILABLE_VLLM_RERANKER_MODELS = [
-    ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", "Qwen3-Reranker-0.6B (~2GB)", 2.0),
-    ("tomaarsen/Qwen3-Reranker-4B-seq-cls", "Qwen3-Reranker-4B (~9GB)", 9.0),
+    ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", "Qwen3-Reranker-0.6B"),
+    ("tomaarsen/Qwen3-Reranker-4B-seq-cls", "Qwen3-Reranker-4B"),
 ]
 
 # Qwen3-Reranker prompt templates (no colons after tags)
@@ -61,9 +58,7 @@ NOT_AN_ENTITY = ""
 # vLLM settings
 DEFAULT_TENSOR_PARALLEL_SIZE = 1
 DEFAULT_MAX_MODEL_LEN = 8192
-VLLM_GPU_MEMORY_UTILIZATION = (
-    0.9  # Fraction of GPU memory vLLM will use (0.8 leaves headroom for loading)
-)
+VLLM_GPU_MEMORY_UTILIZATION = 0.9  # Default fraction of GPU memory vLLM will use
 
 # Embedding task descriptions
 RETRIEVER_TASK = (

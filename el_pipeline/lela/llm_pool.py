@@ -4,6 +4,7 @@ Singleton pool for managing expensive LLM and embedder instances.
 This module provides lazy initialization and reuse of:
 - SentenceTransformer instances for embeddings
 - vLLM instances for text generation
+- Generic model instances (GLiNER, CrossEncoder, Transformers, etc.)
 
 Memory Management:
 - Models are cached for reuse between pipeline stages
@@ -14,12 +15,11 @@ Memory Management:
 
 import logging
 import os
-from typing import Dict, Set, Optional, Any
+from typing import Callable, Dict, Set, Optional, Any, Tuple
 
 from el_pipeline.lela.config import VLLM_GPU_MEMORY_UTILIZATION
 
-# Disable vLLM V1 engine and configure multiprocessing to work from worker threads
-os.environ.setdefault("VLLM_USE_V1", "0")
+# Configure multiprocessing to work from worker threads
 os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
 
 logger = logging.getLogger(__name__)
@@ -147,7 +147,7 @@ def get_sentence_transformer_instance(
             logger.info(
                 f"Free VRAM ({free_vram:.1f}GB) < needed ({estimated_vram_gb:.1f}GB), evicting unused models"
             )
-            _evict_unused_sentence_transformers(estimated_vram_gb)
+            _evict_all_unused_models(estimated_vram_gb)
 
         sentence_transformers = _get_sentence_transformers()
 
@@ -250,6 +250,14 @@ def _get_vllm():
     return _vllm_module
 
 
+def _vllm_key(model_name, tensor_parallel_size, convert, gpu_memory_utilization):
+    """Build a cache key for vLLM instances that includes all relevant parameters."""
+    key = f"{model_name}:tp{tensor_parallel_size}:mem{gpu_memory_utilization}"
+    if convert:
+        key += f":{convert}"
+    return key
+
+
 def _evict_unused_vllm_instances():
     """Evict all unused vLLM instances to free memory."""
     global _vllm_instances, _vllm_in_use
@@ -276,6 +284,9 @@ def _evict_all_unused_models(required_vram_gb: float = 0):
     # First evict unused SentenceTransformers
     _evict_unused_sentence_transformers(required_vram_gb)
 
+    # Then evict unused generic models
+    _evict_unused_generic(required_vram_gb)
+
     # Then evict unused vLLM instances
     _evict_unused_vllm_instances()
 
@@ -289,6 +300,7 @@ def get_vllm_instance(
     max_model_len: Optional[int] = None,
     estimated_vram_gb: float = 10.0,
     convert: Optional[str] = None,
+    gpu_memory_utilization: Optional[float] = None,
     **kwargs,
 ):
     """
@@ -304,17 +316,18 @@ def get_vllm_instance(
         estimated_vram_gb: Estimated VRAM needed (for eviction decisions)
         convert: Optional vLLM convert (e.g. "embed"). Included in cache key
               and passed to vllm.LLM() constructor when set.
+        gpu_memory_utilization: Fraction of GPU memory to use (0.1–0.95).
+              Defaults to VLLM_GPU_MEMORY_UTILIZATION from config.
         **kwargs: Additional vLLM arguments
 
     Returns:
         Tuple of (vLLM LLM instance, bool indicating if it was cached)
     """
+    if gpu_memory_utilization is None:
+        gpu_memory_utilization = VLLM_GPU_MEMORY_UTILIZATION
+
     global _vllm_in_use
-    key = (
-        f"{model_name}:tp{tensor_parallel_size}:{convert}"
-        if convert
-        else f"{model_name}:tp{tensor_parallel_size}"
-    )
+    key = _vllm_key(model_name, tensor_parallel_size, convert, gpu_memory_utilization)
 
     was_cached = key in _vllm_instances
 
@@ -335,7 +348,7 @@ def get_vllm_instance(
             "enforce_eager": True,  # Disable CUDA graphs to avoid multiprocessing issues
             "dtype": "half",  # float16 for efficient inference
             "max_model_len": max_model_len or 4096,  # Qwen3-4B supports up to 32K
-            "gpu_memory_utilization": VLLM_GPU_MEMORY_UTILIZATION,
+            "gpu_memory_utilization": gpu_memory_utilization,
             "trust_remote_code": True,  # Required for Qwen models to load tokenizer/chat template
             **kwargs,
         }
@@ -354,19 +367,20 @@ def get_vllm_instance(
 
 
 def release_vllm(
-    model_name: str, tensor_parallel_size: int = 1, convert: Optional[str] = None
+    model_name: str,
+    tensor_parallel_size: int = 1,
+    convert: Optional[str] = None,
+    gpu_memory_utilization: Optional[float] = None,
 ):
     """
     Mark a vLLM instance as no longer in use.
 
     The instance stays cached but can be evicted if memory is needed later.
     """
+    if gpu_memory_utilization is None:
+        gpu_memory_utilization = VLLM_GPU_MEMORY_UTILIZATION
     global _vllm_in_use
-    key = (
-        f"{model_name}:tp{tensor_parallel_size}:{convert}"
-        if convert
-        else f"{model_name}:tp{tensor_parallel_size}"
-    )
+    key = _vllm_key(model_name, tensor_parallel_size, convert, gpu_memory_utilization)
     _vllm_in_use.discard(key)
     logger.debug(f"Released vLLM instance: {key}")
 
@@ -407,6 +421,124 @@ def clear_vllm_instances(force: bool = False):
 
 
 # ============================================================================
+# Generic Model Pool with Lazy Eviction
+# ============================================================================
+
+_generic_instances: Dict[str, Any] = {}
+_generic_in_use: Set[str] = set()
+
+
+def _evict_unused_generic(required_vram_gb: float = 0):
+    """
+    Evict unused generic model instances to free memory.
+
+    Args:
+        required_vram_gb: Minimum VRAM needed (will keep evicting until enough is free)
+    """
+    global _generic_instances, _generic_in_use
+
+    unused_keys = [
+        k for k in _generic_instances.keys() if k not in _generic_in_use
+    ]
+
+    if not unused_keys:
+        return
+
+    for key in unused_keys:
+        if required_vram_gb > 0 and _get_free_vram_gb() >= required_vram_gb:
+            break
+
+        logger.info(f"Evicting unused generic model: {key}")
+        try:
+            del _generic_instances[key]
+        except Exception as e:
+            logger.warning(f"Error evicting generic model {key}: {e}")
+
+    _clear_cuda_cache()
+
+
+def get_generic_instance(
+    key: str, loader_fn: Callable, estimated_vram_gb: float = 2.0
+) -> Tuple[Any, bool]:
+    """
+    Get or create a generic model instance.
+
+    Uses lazy eviction: if memory is tight and there are unused cached models,
+    they will be evicted before loading the new model.
+
+    Args:
+        key: Unique cache key for this model (e.g. "gliner:model_name")
+        loader_fn: Callable that loads and returns the model instance
+        estimated_vram_gb: Estimated VRAM needed for this model
+
+    Returns:
+        Tuple of (model instance, bool indicating if it was cached)
+    """
+    global _generic_in_use
+
+    was_cached = key in _generic_instances
+
+    if not was_cached:
+        free_vram = _get_free_vram_gb()
+        if free_vram < estimated_vram_gb:
+            logger.info(
+                f"Free VRAM ({free_vram:.1f}GB) < needed ({estimated_vram_gb:.1f}GB), evicting unused models"
+            )
+            _evict_all_unused_models(estimated_vram_gb)
+
+        _generic_instances[key] = loader_fn()
+        logger.info(f"Generic model loaded: {key}")
+    else:
+        logger.info(f"Reusing cached generic model: {key}")
+
+    _generic_in_use.add(key)
+    return _generic_instances[key], was_cached
+
+
+def release_generic(key: str):
+    """Mark a generic model instance as no longer in use."""
+    global _generic_in_use
+    _generic_in_use.discard(key)
+    logger.debug(f"Released generic model: {key}")
+
+
+def release_all_generic():
+    """Mark all generic model instances as no longer in use."""
+    global _generic_in_use
+    _generic_in_use.clear()
+    logger.debug("Released all generic model instances")
+
+
+def clear_generic_instances(force: bool = False):
+    """
+    Clear all cached generic model instances.
+
+    Args:
+        force: If True, actually delete instances and free GPU memory.
+    """
+    global _generic_instances, _generic_in_use
+
+    if not force:
+        return
+
+    for key in list(_generic_instances.keys()):
+        try:
+            logger.info(f"Shutting down generic model instance: {key}")
+            del _generic_instances[key]
+        except Exception as e:
+            logger.warning(f"Error cleaning up generic model instance {key}: {e}")
+
+    _generic_instances.clear()
+    _generic_in_use.clear()
+    _clear_cuda_cache()
+
+
+def is_generic_cached(key: str) -> bool:
+    """Check if a generic model is currently cached."""
+    return key in _generic_instances
+
+
+# ============================================================================
 # Convenience Functions
 # ============================================================================
 
@@ -415,7 +547,16 @@ def release_all_models():
     """Mark all cached models as no longer in use (available for eviction)."""
     release_all_sentence_transformers()
     release_all_vllm()
+    release_all_generic()
     logger.info("All models marked as available for eviction")
+
+
+def clear_all_models():
+    """Force-clear all cached models (SentenceTransformer, vLLM, and generic)."""
+    clear_sentence_transformer_instances(force=True)
+    clear_vllm_instances(force=True)
+    clear_generic_instances(force=True)
+    logger.info("All models unloaded")
 
 
 def is_sentence_transformer_cached(
@@ -427,14 +568,15 @@ def is_sentence_transformer_cached(
 
 
 def is_vllm_cached(
-    model_name: str, tensor_parallel_size: int = 1, convert: Optional[str] = None
+    model_name: str,
+    tensor_parallel_size: int = 1,
+    convert: Optional[str] = None,
+    gpu_memory_utilization: Optional[float] = None,
 ) -> bool:
     """Check if a vLLM model is currently cached."""
-    key = (
-        f"{model_name}:tp{tensor_parallel_size}:{convert}"
-        if convert
-        else f"{model_name}:tp{tensor_parallel_size}"
-    )
+    if gpu_memory_utilization is None:
+        gpu_memory_utilization = VLLM_GPU_MEMORY_UTILIZATION
+    key = _vllm_key(model_name, tensor_parallel_size, convert, gpu_memory_utilization)
     return key in _vllm_instances
 
 
@@ -454,5 +596,9 @@ def get_cached_models_info() -> dict:
         "vllm": [
             {"key": key, "in_use": key in _vllm_in_use}
             for key in _vllm_instances.keys()
+        ],
+        "generic": [
+            {"key": key, "in_use": key in _generic_in_use}
+            for key in _generic_instances.keys()
         ],
     }

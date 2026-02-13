@@ -83,6 +83,7 @@ def _get_faiss():
         "top_k": CANDIDATES_TOP_K,
         "device": None,
         "use_context": False,
+        "estimated_vram_gb": 2.0,
     },
 )
 def create_lela_dense_candidates_component(
@@ -92,6 +93,7 @@ def create_lela_dense_candidates_component(
     top_k: int,
     device: Optional[str],
     use_context: bool,
+    estimated_vram_gb: float,
 ):
     """Factory for LELA dense candidates component."""
     return LELADenseCandidatesComponent(
@@ -100,6 +102,7 @@ def create_lela_dense_candidates_component(
         top_k=top_k,
         device=device,
         use_context=use_context,
+        estimated_vram_gb=estimated_vram_gb,
     )
 
 
@@ -121,12 +124,14 @@ class LELADenseCandidatesComponent:
         top_k: int = CANDIDATES_TOP_K,
         device: Optional[str] = None,
         use_context: bool = False,
+        estimated_vram_gb: float = 2.0,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
         self.device = device
         self.use_context = use_context
+        self.estimated_vram_gb = estimated_vram_gb
 
         ensure_candidates_extension()
 
@@ -196,7 +201,9 @@ class LELADenseCandidatesComponent:
         report(0.1, f"Building FAISS index over {len(self.entities)} entities...")
 
         # Load model for embedding, then release after index is built
-        model, _ = get_sentence_transformer_instance(self.model_name, self.device)
+        model, _ = get_sentence_transformer_instance(
+            self.model_name, self.device, estimated_vram_gb=self.estimated_vram_gb
+        )
         embeddings = model.encode(
             entity_texts, normalize_embeddings=True, convert_to_numpy=True
         )
@@ -250,7 +257,7 @@ class LELADenseCandidatesComponent:
 
         # Load model for this stage (will reuse cached if available)
         model, was_cached = get_sentence_transformer_instance(
-            self.model_name, self.device
+            self.model_name, self.device, estimated_vram_gb=self.estimated_vram_gb
         )
 
         if self.progress_callback:

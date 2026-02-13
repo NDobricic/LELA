@@ -30,7 +30,8 @@ from el_pipeline.lela.prompts import (
     create_disambiguation_messages,
     DEFAULT_SYSTEM_PROMPT,
 )
-from el_pipeline.lela.llm_pool import get_vllm_instance, release_vllm
+from el_pipeline.lela.llm_pool import get_vllm_instance, release_vllm, get_generic_instance, release_generic
+from el_pipeline.memory import gb_to_vllm_fraction
 from el_pipeline.utils import (
     ensure_candidates_extension,
     ensure_resolved_entity_extension,
@@ -79,6 +80,7 @@ def _ensure_extensions():
         "model_name": DEFAULT_LLM_MODEL,
         "tensor_parallel_size": DEFAULT_TENSOR_PARALLEL_SIZE,
         "max_model_len": DEFAULT_MAX_MODEL_LEN,
+        "gpu_memory_gb": None,
         "add_none_candidate": True,
         "add_descriptions": True,
         "disable_thinking": False,
@@ -93,6 +95,7 @@ def create_lela_vllm_disambiguator_component(
     model_name: str,
     tensor_parallel_size: int,
     max_model_len: Optional[int],
+    gpu_memory_gb: Optional[float],
     add_none_candidate: bool,
     add_descriptions: bool,
     disable_thinking: bool,
@@ -106,6 +109,7 @@ def create_lela_vllm_disambiguator_component(
         model_name=model_name,
         tensor_parallel_size=tensor_parallel_size,
         max_model_len=max_model_len,
+        gpu_memory_gb=gpu_memory_gb,
         add_none_candidate=add_none_candidate,
         add_descriptions=add_descriptions,
         disable_thinking=disable_thinking,
@@ -133,6 +137,7 @@ class LELAvLLMDisambiguatorComponent:
         model_name: str = DEFAULT_LLM_MODEL,
         tensor_parallel_size: int = DEFAULT_TENSOR_PARALLEL_SIZE,
         max_model_len: Optional[int] = DEFAULT_MAX_MODEL_LEN,
+        gpu_memory_gb: Optional[float] = None,
         add_none_candidate: bool = False,
         add_descriptions: bool = True,
         disable_thinking: bool = False,
@@ -144,6 +149,8 @@ class LELAvLLMDisambiguatorComponent:
         self.model_name = model_name
         self.tensor_parallel_size = tensor_parallel_size
         self.max_model_len = max_model_len
+        self.gpu_memory_gb = gpu_memory_gb
+        self.gpu_memory_utilization = gb_to_vllm_fraction(gpu_memory_gb) if gpu_memory_gb is not None else None
         self.add_none_candidate = add_none_candidate
         self.add_descriptions = add_descriptions
         self.disable_thinking = disable_thinking
@@ -223,6 +230,8 @@ class LELAvLLMDisambiguatorComponent:
                 model_name=self.model_name,
                 tensor_parallel_size=self.tensor_parallel_size,
                 max_model_len=self.max_model_len,
+                gpu_memory_utilization=self.gpu_memory_utilization,
+                estimated_vram_gb=self.gpu_memory_gb or 10.0,
             )
             sampling_config = {**self.generation_config, "n": self.self_consistency_k}
             self.sampling_params = SamplingParams(**sampling_config)
@@ -408,7 +417,7 @@ class LELAvLLMDisambiguatorComponent:
                     continue
 
         # Release LLM - stays cached but can be evicted if memory needed
-        release_vllm(self.model_name, self.tensor_parallel_size)
+        release_vllm(self.model_name, self.tensor_parallel_size, gpu_memory_utilization=self.gpu_memory_utilization)
         self.llm = None  # Drop reference so pool eviction can free GPU memory
 
         # Clear progress callback after processing
@@ -724,6 +733,7 @@ class LELAOpenAIAPIDisambiguatorComponent:
         "disable_thinking": False,
         "system_prompt": None,
         "generation_config": None,
+        "estimated_vram_gb": 10.0,
     },
 )
 def create_lela_transformers_disambiguator_component(
@@ -735,6 +745,7 @@ def create_lela_transformers_disambiguator_component(
     disable_thinking: bool,
     system_prompt: Optional[str],
     generation_config: Optional[dict],
+    estimated_vram_gb: float,
 ):
     """Factory for LELA transformers disambiguator component."""
     return LELATransformersDisambiguatorComponent(
@@ -745,6 +756,7 @@ def create_lela_transformers_disambiguator_component(
         disable_thinking=disable_thinking,
         system_prompt=system_prompt,
         generation_config=generation_config,
+        estimated_vram_gb=estimated_vram_gb,
     )
 
 
@@ -764,6 +776,7 @@ class LELATransformersDisambiguatorComponent:
         disable_thinking: bool = True,
         system_prompt: Optional[str] = None,
         generation_config: Optional[dict] = None,
+        estimated_vram_gb: float = 10.0,
     ):
         self.nlp = nlp
         self.model_name = model_name
@@ -772,28 +785,40 @@ class LELATransformersDisambiguatorComponent:
         self.disable_thinking = disable_thinking
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.generation_config = generation_config or DEFAULT_GENERATION_CONFIG
+        self.estimated_vram_gb = estimated_vram_gb
+        self.model = None
+        self.tokenizer = None
 
         _ensure_extensions()
-
-        # Lazy load model and tokenizer
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-
-        logger.info(f"Loading transformers model: {model_name}")
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name, trust_remote_code=True
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16,
-            trust_remote_code=True,
-        ).to("cuda")
-        self.model.eval()
 
         self.kb = None
         self.progress_callback: Optional[ProgressCallback] = None
 
         logger.info(f"LELA transformers disambiguator initialized: {model_name}")
+
+    def _ensure_model_loaded(self):
+        if self.model is not None:
+            return
+        key = f"transformers:{self.model_name}"
+
+        def loader():
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+
+            logger.info(f"Loading transformers model: {self.model_name}")
+            tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name, trust_remote_code=True
+            )
+            model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.float16,
+                trust_remote_code=True,
+            ).to("cuda")
+            model.eval()
+            return (model, tokenizer)
+
+        result, _ = get_generic_instance(key, loader, self.estimated_vram_gb)
+        self.model, self.tokenizer = result
 
     def initialize(self, kb: KnowledgeBase):
         """Initialize the component with a knowledge base."""
@@ -845,114 +870,121 @@ class LELATransformersDisambiguatorComponent:
         entities = list(doc.ents)
         num_entities = len(entities)
 
-        for i, ent in enumerate(entities):
-            ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-            base_progress = i / num_entities
-            entity_progress_range = 1.0 / num_entities
+        self._ensure_model_loaded()
 
-            def report_entity_progress(sub_progress: float, sub_desc: str):
-                if self.progress_callback and num_entities > 0:
-                    progress = base_progress + sub_progress * entity_progress_range
-                    self.progress_callback(
-                        progress,
-                        f"Entity {i+1}/{num_entities} ({ent_text}): {sub_desc}",
-                    )
+        try:
+            for i, ent in enumerate(entities):
+                ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
+                base_progress = i / num_entities
+                entity_progress_range = 1.0 / num_entities
 
-            report_entity_progress(0.0, "checking candidates")
+                def report_entity_progress(sub_progress: float, sub_desc: str):
+                    if self.progress_callback and num_entities > 0:
+                        progress = base_progress + sub_progress * entity_progress_range
+                        self.progress_callback(
+                            progress,
+                            f"Entity {i+1}/{num_entities} ({ent_text}): {sub_desc}",
+                        )
 
-            candidates = getattr(ent._, "candidates", [])
-            if not candidates:
-                continue
+                report_entity_progress(0.0, "checking candidates")
 
-            if len(candidates) == 1 and not self.add_none_candidate:
-                report_entity_progress(0.5, "single candidate, selecting")
-                entity = self.kb.get_entity(candidates[0].entity_id)
-                if entity:
-                    ent._.resolved_entity = entity
-                continue
-
-            report_entity_progress(
-                0.1, f"preparing prompt ({len(candidates)} candidates)"
-            )
-
-            marked_text = self._mark_mention(text, ent.start_char, ent.end_char)
-            messages = create_disambiguation_messages(
-                marked_text=marked_text,
-                candidates=candidates,
-                kb=self.kb,
-                system_prompt=self.system_prompt,
-                add_none_candidate=self.add_none_candidate,
-                add_descriptions=self.add_descriptions,
-                disable_thinking=self.disable_thinking,
-            )
-
-            report_entity_progress(0.2, "calling LLM...")
-
-            try:
-                prompt = self.tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                )
-                for msg in messages:
-                    logger.debug(f"[{msg['role']}] {msg['content']}")
-                logger.debug(f"Formatted prompt for '{ent.text}':\n{prompt}")
-
-                inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
-                with torch.no_grad():
-                    outputs = self.model.generate(
-                        **inputs,
-                        max_new_tokens=self.generation_config.get("max_tokens", 2048),
-                        temperature=self.generation_config.get("temperature"),
-                        do_sample=True,
-                        pad_token_id=self.tokenizer.eos_token_id,
-                    )
-                # Extract only the generated part (remove the prompt)
-                generated_ids = outputs[0][inputs["input_ids"].shape[1] :]
-                raw_output = self.tokenizer.decode(
-                    generated_ids, skip_special_tokens=True
-                )
-                logger.debug(f"LLM raw output for '{ent.text}': {raw_output}")
-
-            except Exception as e:
-                logger.error(f"LLM generation error: {e}")
-                continue
-
-            report_entity_progress(0.9, "parsing LLM response")
-
-            try:
-                answer = self._parse_output(raw_output)
-                logger.debug(
-                    f"Parsed answer: {answer} (from {len(candidates)} candidates)"
-                )
-
-                if answer == 0:
-                    logger.debug(
-                        f"Skipping entity '{ent.text}': answer was 0 (none or parse failure)"
-                    )
+                candidates = getattr(ent._, "candidates", [])
+                if not candidates:
                     continue
 
-                if 0 < answer <= len(candidates):
-                    selected = candidates[answer - 1]
-                    logger.debug(f"Selected candidate: '{selected.entity_id}'")
-                    entity = self.kb.get_entity(selected.entity_id)
+                if len(candidates) == 1 and not self.add_none_candidate:
+                    report_entity_progress(0.5, "single candidate, selecting")
+                    entity = self.kb.get_entity(candidates[0].entity_id)
                     if entity:
                         ent._.resolved_entity = entity
-                        logger.debug(
-                            f"Resolved '{ent.text}' to '{entity.title}' (id: {entity.id})"
+                    continue
+
+                report_entity_progress(
+                    0.1, f"preparing prompt ({len(candidates)} candidates)"
+                )
+
+                marked_text = self._mark_mention(text, ent.start_char, ent.end_char)
+                messages = create_disambiguation_messages(
+                    marked_text=marked_text,
+                    candidates=candidates,
+                    kb=self.kb,
+                    system_prompt=self.system_prompt,
+                    add_none_candidate=self.add_none_candidate,
+                    add_descriptions=self.add_descriptions,
+                    disable_thinking=self.disable_thinking,
+                )
+
+                report_entity_progress(0.2, "calling LLM...")
+
+                try:
+                    prompt = self.tokenizer.apply_chat_template(
+                        messages,
+                        tokenize=False,
+                        add_generation_prompt=True,
+                    )
+                    for msg in messages:
+                        logger.debug(f"[{msg['role']}] {msg['content']}")
+                    logger.debug(f"Formatted prompt for '{ent.text}':\n{prompt}")
+
+                    inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+                    with torch.no_grad():
+                        outputs = self.model.generate(
+                            **inputs,
+                            max_new_tokens=self.generation_config.get("max_tokens", 2048),
+                            temperature=self.generation_config.get("temperature"),
+                            do_sample=True,
+                            pad_token_id=self.tokenizer.eos_token_id,
                         )
-                    else:
-                        logger.warning(
-                            f"Entity not found in KB: '{selected.entity_id}'"
-                        )
-                else:
+                    # Extract only the generated part (remove the prompt)
+                    generated_ids = outputs[0][inputs["input_ids"].shape[1] :]
+                    raw_output = self.tokenizer.decode(
+                        generated_ids, skip_special_tokens=True
+                    )
+                    logger.debug(f"LLM raw output for '{ent.text}': {raw_output}")
+
+                except Exception as e:
+                    logger.error(f"LLM generation error: {e}")
+                    continue
+
+                report_entity_progress(0.9, "parsing LLM response")
+
+                try:
+                    answer = self._parse_output(raw_output)
                     logger.debug(
-                        f"Answer {answer} out of range for {len(candidates)} candidates"
+                        f"Parsed answer: {answer} (from {len(candidates)} candidates)"
                     )
 
-            except Exception as e:
-                logger.error(f"Error processing LLM response: {e}")
-                continue
+                    if answer == 0:
+                        logger.debug(
+                            f"Skipping entity '{ent.text}': answer was 0 (none or parse failure)"
+                        )
+                        continue
+
+                    if 0 < answer <= len(candidates):
+                        selected = candidates[answer - 1]
+                        logger.debug(f"Selected candidate: '{selected.entity_id}'")
+                        entity = self.kb.get_entity(selected.entity_id)
+                        if entity:
+                            ent._.resolved_entity = entity
+                            logger.debug(
+                                f"Resolved '{ent.text}' to '{entity.title}' (id: {entity.id})"
+                            )
+                        else:
+                            logger.warning(
+                                f"Entity not found in KB: '{selected.entity_id}'"
+                            )
+                    else:
+                        logger.debug(
+                            f"Answer {answer} out of range for {len(candidates)} candidates"
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error processing LLM response: {e}")
+                    continue
+        finally:
+            release_generic(f"transformers:{self.model_name}")
+            self.model = None
+            self.tokenizer = None
 
         self.progress_callback = None
         return doc

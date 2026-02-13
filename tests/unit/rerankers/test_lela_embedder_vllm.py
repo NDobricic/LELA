@@ -172,7 +172,7 @@ class TestLELAEmbedderVLLMRerankerComponent:
         doc.ents[0]._.candidates = sample_candidates
         reranker(doc)
 
-        mock_release.assert_called_once_with(reranker.model_name, task="embed")
+        mock_release.assert_called_once_with(reranker.model_name, convert="embed", gpu_memory_utilization=reranker.gpu_memory_utilization)
 
     @patch("el_pipeline.spacy_components.rerankers.release_vllm")
     @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
@@ -198,7 +198,9 @@ class TestLELAEmbedderVLLMRerankerComponent:
 
         mock_get_instance.assert_called_once_with(
             model_name=reranker.model_name,
-            task="embed",
+            convert="embed",
+            gpu_memory_utilization=None,
+            estimated_vram_gb=10.0,
         )
 
     def test_initialization_with_custom_params(self, nlp):

@@ -219,7 +219,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         doc.ents[0]._.candidates = sample_candidates
         reranker(doc)
 
-        mock_release.assert_called_once_with(reranker.model_name)
+        mock_release.assert_called_once_with(reranker.model_name, gpu_memory_utilization=reranker.gpu_memory_utilization)
 
     def test_initialization_with_custom_params(self, nlp):
         from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
@@ -235,10 +235,10 @@ class TestLELACrossEncoderVLLMRerankerComponent:
     @patch("el_pipeline.spacy_components.rerankers.release_vllm")
     @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
     @patch("el_pipeline.spacy_components.rerankers._get_vllm")
-    def test_loads_vllm_with_score_task(
+    def test_loads_vllm_with_hf_overrides(
         self, mock_get_vllm_mod, mock_get_instance, mock_release, sample_candidates, nlp
     ):
-        """Model should be loaded with task='score' and hf_overrides for seq-cls."""
+        """Model should be loaded with hf_overrides for seq-cls."""
         mock_model = MagicMock()
         mock_model.score.return_value = [_make_score_output(0.5)] * 5
         mock_get_instance.return_value = (mock_model, False)
@@ -258,7 +258,8 @@ class TestLELACrossEncoderVLLMRerankerComponent:
 
         mock_get_instance.assert_called_once_with(
             model_name=reranker.model_name,
-            task="score",
+            gpu_memory_utilization=None,
+            estimated_vram_gb=10.0,
             hf_overrides={
                 "architectures": ["Qwen3ForSequenceClassification"],
                 "classifier_from_token": ["no", "yes"],

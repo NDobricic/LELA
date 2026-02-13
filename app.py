@@ -1,8 +1,4 @@
 import os
-
-# Disable vLLM V1 engine before any imports - V1 uses multiprocessing that fails from worker threads
-os.environ["VLLM_USE_V1"] = "0"
-
 import argparse
 import gc
 import importlib.util
@@ -29,6 +25,7 @@ from el_pipeline.lela.config import (
     DEFAULT_VLLM_RERANKER_MODEL,
     DEFAULT_GLINER_MODEL,
 )
+from el_pipeline.lela.llm_pool import clear_all_models
 
 DESCRIPTION = """
 *Modular entity recognition and linking pipeline. Upload a knowledge base, enter text, configure the pipeline, and run.*"
@@ -570,13 +567,17 @@ def run_pipeline(
     reranker_api_url: str,
     reranker_api_port: int,
     reranker_top_k: int,
+    reranker_gpu_mem_gb: float,
     disambig_type: str,
     llm_model: str,
     lela_thinking: bool,
     lela_none_candidate: bool,
+    disambig_gpu_mem_gb: float,
     disambig_api_base_url: str,
     disambig_api_key: str,
     kb_type: str,
+    ner_gpu_mem_gb: float,
+    cand_gpu_mem_gb: float,
     progress=gr.Progress(),
 ):
     """Run the EL pipeline with selected configuration.
@@ -639,6 +640,7 @@ def run_pipeline(
     elif ner_type == "gliner":
         ner_params["model_name"] = gliner_model
         ner_params["threshold"] = gliner_threshold
+        ner_params["estimated_vram_gb"] = ner_gpu_mem_gb
         if gliner_labels:
             ner_params["labels"] = [l.strip() for l in gliner_labels.split(",")]
     elif ner_type == "simple":
@@ -649,6 +651,7 @@ def run_pipeline(
     if cand_type == "lela_dense":
         cand_params["use_context"] = cand_use_context
         cand_params["model_name"] = cand_embedding_model
+        cand_params["estimated_vram_gb"] = cand_gpu_mem_gb
     elif cand_type == "lela_openai_api_dense":
         cand_params["use_context"] = cand_use_context
         cand_params["model_name"] = cand_embedding_model
@@ -665,9 +668,14 @@ def run_pipeline(
         reranker_params["model_name"] = reranker_cross_encoder_model
     if reranker_type == "lela_cross_encoder":
         reranker_params["model_name"] = reranker_cross_encoder_model
+        reranker_params["estimated_vram_gb"] = reranker_gpu_mem_gb
     if reranker_type == "lela_vllm_api_client":
         reranker_params["base_url"] = reranker_api_url
         reranker_params["port"] = reranker_api_port
+    if reranker_type in ("lela_embedder_vllm", "lela_cross_encoder_vllm"):
+        reranker_params["gpu_memory_gb"] = reranker_gpu_mem_gb
+    if reranker_type == "lela_embedder_transformers":
+        reranker_params["estimated_vram_gb"] = reranker_gpu_mem_gb
 
     # Build disambiguator params
     disambig_params = {}
@@ -675,6 +683,10 @@ def run_pipeline(
         disambig_params["model_name"] = llm_model
         disambig_params["disable_thinking"] = not lela_thinking
         disambig_params["add_none_candidate"] = lela_none_candidate
+    if disambig_type == "lela_vllm":
+        disambig_params["gpu_memory_gb"] = disambig_gpu_mem_gb
+    if disambig_type == "lela_transformers":
+        disambig_params["estimated_vram_gb"] = disambig_gpu_mem_gb
     if disambig_type == "lela_openai_api":
         disambig_params["base_url"] = disambig_api_base_url
         disambig_params["api_key"] = disambig_api_key or None
@@ -877,6 +889,7 @@ def update_ner_params(ner_choice: str):
         spacy_params: gr.update(visible=(ner_choice == "spacy")),
         gliner_params: gr.update(visible=(ner_choice == "gliner")),
         simple_params: gr.update(visible=(ner_choice == "simple")),
+        ner_gpu_mem_gb: gr.update(visible=(ner_choice == "gliner")),
     }
 
 
@@ -887,15 +900,18 @@ def update_cand_params(cand_choice: str):
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
+            gr.update(visible=False),
         )
     show_context = cand_choice in ("lela_dense", "lela_openai_api_dense")
     show_embedding_model = cand_choice in ("lela_dense", "lela_openai_api_dense")
     show_openai_api_dense_params = cand_choice == "lela_openai_api_dense"
+    show_gpu_mem = cand_choice == "lela_dense"
 
     return (
         gr.update(visible=show_embedding_model),
         gr.update(visible=show_context),
         gr.update(visible=show_openai_api_dense_params),
+        gr.update(visible=show_gpu_mem),
     )
 
 
@@ -910,6 +926,12 @@ def update_reranker_params(reranker_choice: str):
         "lela_embedder_vllm",
     )
     show_lela_vllm_api_client = reranker_choice in ("lela_vllm_api_client", "lela_llama_server")
+    show_gpu_mem = reranker_choice in (
+        "lela_cross_encoder",
+        "lela_embedder_transformers",
+        "lela_embedder_vllm",
+        "lela_cross_encoder_vllm",
+    )
     # Use different model lists for vLLM vs transformers cross-encoder
     if reranker_choice == "lela_cross_encoder_vllm":
         ce_choices = [(m[1], m[0]) for m in VLLM_RERANKER_MODEL_CHOICES]
@@ -923,16 +945,19 @@ def update_reranker_params(reranker_choice: str):
         ),
         gr.update(visible=show_embedding_model),
         gr.update(visible=show_lela_vllm_api_client),
+        gr.update(visible=show_gpu_mem),
     )
 
 
 def update_disambig_params(disambig_choice: str):
     """Show/hide disambiguator-specific parameters based on selection."""
     show_llm = disambig_choice in ("lela_vllm", "lela_transformers")
+    show_gpu_mem = disambig_choice in ("lela_vllm", "lela_transformers")
     show_openai_api = disambig_choice == "lela_openai_api"
     return (
         gr.update(visible=show_llm),
         gr.update(visible=show_llm),
+        gr.update(visible=show_gpu_mem),
         gr.update(visible=show_openai_api),
     )
 
@@ -956,16 +981,8 @@ def update_loader_from_file(file: Optional[gr.File]):
     return gr.update()
 
 
-def compute_memory_estimate(
-    ner_type: str,
-    gliner_model: str,
-    cand_type: str,
-    reranker_type: str,
-    disambig_type: str,
-    llm_model: str,
-) -> str:
-    """Compute and format memory estimate for current configuration."""
-    from el_pipeline.lela.config import VLLM_GPU_MEMORY_UTILIZATION
+def compute_memory_estimate() -> str:
+    """Show GPU info, cached models, and cached KBs."""
     from el_pipeline.lela.llm_pool import get_cached_models_info
     from el_pipeline.knowledge_bases.custom import get_kb_cache_info
 
@@ -977,12 +994,6 @@ def compute_memory_estimate(
             lines.append(f"**GPU:** {resources.gpu_name}")
             lines.append(
                 f"**VRAM:** {resources.gpu_vram_free_gb:.1f}GB free / {resources.gpu_vram_total_gb:.1f}GB total"
-            )
-
-            # Show allocatable memory (considering vLLM's memory fraction)
-            allocatable = resources.gpu_vram_free_gb * VLLM_GPU_MEMORY_UTILIZATION
-            lines.append(
-                f"**Allocatable:** ~{allocatable:.1f}GB ({VLLM_GPU_MEMORY_UTILIZATION*100:.0f}% of free)"
             )
         else:
             lines.append("**GPU:** Not available")
@@ -997,6 +1008,10 @@ def compute_memory_estimate(
         for vllm_info in cached_info.get("vllm", []):
             model_name = vllm_info["key"].split(":")[0].split("/")[-1]
             status = "in use" if vllm_info["in_use"] else "cached"
+            cached_models.append(f"{model_name} ({status})")
+        for gen_info in cached_info.get("generic", []):
+            model_name = gen_info["key"].split(":")[-1].split("/")[-1]
+            status = "in use" if gen_info["in_use"] else "cached"
             cached_models.append(f"{model_name} ({status})")
 
         if cached_models:
@@ -1090,6 +1105,11 @@ if __name__ == "__main__":
     # Log vLLM availability status
     vllm_ok = _is_vllm_usable()
     logger.info(f"vLLM disambiguator available: {vllm_ok}")
+
+    # Detect GPU total VRAM for GB sliders
+    _resources = get_system_resources()
+    gpu_total_gb = max(_resources.gpu_vram_total_gb, 1.0)  # fallback minimum 1 GB
+    logger.info(f"GPU total VRAM: {gpu_total_gb:.1f} GB")
 
     components = get_available_components()
 
@@ -1321,11 +1341,19 @@ if __name__ == "__main__":
                 # --- CONFIGURATION SECTION (Horizontal Layout) ---
                 gr.Markdown("### Configuration")
 
-                # GPU memory info (left-aligned, above components)
-                memory_estimate_display = gr.Markdown(
-                    value="*Detecting GPU...*",
-                    elem_id="memory-estimate",
-                )
+                # GPU memory info + unload button
+                with gr.Row():
+                    memory_estimate_display = gr.Markdown(
+                        value="*Detecting GPU...*",
+                        elem_id="memory-estimate",
+                    )
+                    unload_btn = gr.Button(
+                        "Unload All Models",
+                        variant="secondary",
+                        size="sm",
+                        scale=0,
+                        min_width=140,
+                    )
 
                 with gr.Row(equal_height=False, elem_classes=["config-row"]):
                     # NER Column
@@ -1367,6 +1395,14 @@ if __name__ == "__main__":
                                 step=1,
                                 label="Min Length",
                             )
+                        ner_gpu_mem_gb = gr.Slider(
+                            minimum=0.5,
+                            maximum=gpu_total_gb,
+                            value=min(2.0, gpu_total_gb),
+                            step=0.5,
+                            label="GPU Memory (GB)",
+                            visible=False,
+                        )
 
                     # Candidates Column
                     with gr.Column(scale=1, min_width=200):
@@ -1409,6 +1445,14 @@ if __name__ == "__main__":
                         cand_use_context = gr.Checkbox(
                             label="Use Context",
                             value=False,
+                            visible=False,
+                        )
+                        cand_gpu_mem_gb = gr.Slider(
+                            minimum=0.5,
+                            maximum=gpu_total_gb,
+                            value=min(2.0, gpu_total_gb),
+                            step=0.5,
+                            label="GPU Memory (GB)",
                             visible=False,
                         )
 
@@ -1454,6 +1498,14 @@ if __name__ == "__main__":
                             step=1,
                             label="Top K",
                         )
+                        reranker_gpu_mem_gb = gr.Slider(
+                            minimum=0.5,
+                            maximum=gpu_total_gb,
+                            value=min(10.0, gpu_total_gb),
+                            step=0.5,
+                            label="GPU Memory (GB)",
+                            visible=False,
+                        )
 
                     # Disambiguation Column
                     with gr.Column(scale=1, min_width=200):
@@ -1481,6 +1533,14 @@ if __name__ == "__main__":
                                 label="'None' Candidate",
                                 value=True,
                             )
+                        disambig_gpu_mem_gb = gr.Slider(
+                            minimum=0.5,
+                            maximum=gpu_total_gb,
+                            value=min(10.0, gpu_total_gb),
+                            step=0.5,
+                            label="GPU Memory (GB)",
+                            visible=False,
+                        )
                         with gr.Group(visible=False) as lela_openai_api_params:
                             disambig_api_base_url = gr.Textbox(
                                 label="OpenAI API Base URL",
@@ -1659,7 +1719,7 @@ Test files are available in `data/test/`:
         ner_type.change(
             fn=update_ner_params,
             inputs=[ner_type],
-            outputs=[spacy_params, gliner_params, simple_params],
+            outputs=[spacy_params, gliner_params, simple_params, ner_gpu_mem_gb],
         )
 
         cand_type.change(
@@ -1669,6 +1729,7 @@ Test files are available in `data/test/`:
                 cand_embedding_model,
                 cand_use_context,
                 lela_openai_api_dense_cand_params,
+                cand_gpu_mem_gb,
             ],
         )
 
@@ -1679,36 +1740,31 @@ Test files are available in `data/test/`:
                 reranker_cross_encoder_model,
                 reranker_embedding_model,
                 lela_vllm_api_client_params,
+                reranker_gpu_mem_gb,
             ],
         )
 
         disambig_type.change(
             fn=update_disambig_params,
             inputs=[disambig_type],
-            outputs=[llm_model, lela_common_params, lela_openai_api_params],
+            outputs=[llm_model, lela_common_params, disambig_gpu_mem_gb, lela_openai_api_params],
         )
 
-        # Memory estimate updates
-        memory_inputs = [
-            ner_type,
-            gliner_model,
-            cand_type,
-            reranker_type,
-            disambig_type,
-            llm_model,
-        ]
-
-        for component in [ner_type, cand_type, reranker_type, disambig_type, llm_model]:
-            component.change(
-                fn=compute_memory_estimate,
-                inputs=memory_inputs,
-                outputs=[memory_estimate_display],
-            )
-
-        # Initial memory estimate on load
+        # Memory info display
         demo.load(
             fn=compute_memory_estimate,
-            inputs=memory_inputs,
+            inputs=None,
+            outputs=[memory_estimate_display],
+        )
+
+        # Unload All Models button
+        def handle_unload():
+            clear_all_models()
+            return compute_memory_estimate()
+
+        unload_btn.click(
+            fn=handle_unload,
+            inputs=None,
             outputs=[memory_estimate_display],
         )
 
@@ -1753,13 +1809,17 @@ Test files are available in `data/test/`:
                     reranker_api_url,
                     reranker_api_port,
                     reranker_top_k,
+                    reranker_gpu_mem_gb,
                     disambig_type,
                     llm_model,
                     lela_thinking,
                     lela_none_candidate,
+                    disambig_gpu_mem_gb,
                     disambig_api_base_url,
                     disambig_api_key,
                     kb_type,
+                    ner_gpu_mem_gb,
+                    cand_gpu_mem_gb,
                 ],
                 outputs=[preview_html, stats_output, json_output, text_input],
             )
@@ -1767,6 +1827,11 @@ Test files are available in `data/test/`:
                 fn=restore_buttons_after_run,
                 inputs=None,
                 outputs=[run_btn, cancel_btn],
+            )
+            .then(
+                fn=compute_memory_estimate,
+                inputs=None,
+                outputs=[memory_estimate_display],
             )
         )
 

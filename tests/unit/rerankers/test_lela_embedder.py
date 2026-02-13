@@ -262,4 +262,4 @@ class TestLELAEmbedderRerankerComponent:
         # Call the component to trigger lazy model loading
         reranker(doc)
 
-        mock_get_st.assert_called_once_with("custom-model", "cuda")
+        mock_get_st.assert_called_once_with("custom-model", "cuda", estimated_vram_gb=2.0)
