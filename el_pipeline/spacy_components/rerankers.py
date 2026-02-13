@@ -28,6 +28,7 @@ from el_pipeline.lela.config import (
     SPAN_CLOSE,
     CROSS_ENCODER_PREFIX,
     CROSS_ENCODER_SUFFIX,
+    get_model_vram_gb,
 )
 from el_pipeline.lela.llm_pool import (
     get_sentence_transformer_instance,
@@ -73,7 +74,7 @@ def _get_vllm():
     default_config={
         "model_name": "Qwen/Qwen3-Reranker-4B-seq-cls",
         "top_k": 10,
-        "estimated_vram_gb": 10.0,
+        "estimated_vram_gb": get_model_vram_gb("Qwen/Qwen3-Reranker-4B-seq-cls"),
     },
 )
 def create_cross_encoder_reranker_component(
@@ -104,12 +105,12 @@ class CrossEncoderRerankerComponent:
         nlp: Language,
         model_name: str = "Qwen/Qwen3-Reranker-4B-seq-cls",
         top_k: int = 10,
-        estimated_vram_gb: float = 10.0,
+        estimated_vram_gb: Optional[float] = None,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
-        self.estimated_vram_gb = estimated_vram_gb
+        self.estimated_vram_gb = estimated_vram_gb if estimated_vram_gb is not None else get_model_vram_gb(model_name)
         self.model = None
 
         ensure_candidates_extension()
@@ -125,10 +126,15 @@ class CrossEncoderRerankerComponent:
         key = f"cross_encoder:{self.model_name}"
 
         def loader():
+            import torch
             from sentence_transformers import CrossEncoder
 
             logger.info(f"Loading CrossEncoder model: {self.model_name}")
-            return CrossEncoder(self.model_name)
+            return CrossEncoder(
+                self.model_name,
+                model_kwargs={"torch_dtype": torch.float16},
+                trust_remote_code=True,
+            )
 
         self.model, _ = get_generic_instance(key, loader, self.estimated_vram_gb)
 
@@ -526,7 +532,7 @@ class LlamaServerReranker:
         "model_name": DEFAULT_EMBEDDER_MODEL,
         "top_k": RERANKER_TOP_K,
         "device": None,
-        "estimated_vram_gb": 2.0,
+        "estimated_vram_gb": get_model_vram_gb(DEFAULT_EMBEDDER_MODEL),
     },
 )
 def create_lela_embedder_transformers_reranker_component(
@@ -564,13 +570,13 @@ class LELAEmbedderRerankerComponent:
         model_name: str = DEFAULT_EMBEDDER_MODEL,
         top_k: int = RERANKER_TOP_K,
         device: Optional[str] = None,
-        estimated_vram_gb: float = 2.0,
+        estimated_vram_gb: Optional[float] = None,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
         self.device = device
-        self.estimated_vram_gb = estimated_vram_gb
+        self.estimated_vram_gb = estimated_vram_gb if estimated_vram_gb is not None else get_model_vram_gb(model_name)
 
         ensure_candidates_extension()
 

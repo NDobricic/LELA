@@ -24,6 +24,7 @@ from el_pipeline.lela.config import (
     CANDIDATES_TOP_K,
     DEFAULT_EMBEDDER_MODEL,
     RETRIEVER_TASK,
+    get_model_vram_gb,
 )
 from el_pipeline.lela.llm_pool import (
     get_sentence_transformer_instance,
@@ -83,7 +84,7 @@ def _get_faiss():
         "top_k": CANDIDATES_TOP_K,
         "device": None,
         "use_context": False,
-        "estimated_vram_gb": 2.0,
+        "estimated_vram_gb": get_model_vram_gb(DEFAULT_EMBEDDER_MODEL),
     },
 )
 def create_lela_dense_candidates_component(
@@ -124,14 +125,14 @@ class LELADenseCandidatesComponent:
         top_k: int = CANDIDATES_TOP_K,
         device: Optional[str] = None,
         use_context: bool = False,
-        estimated_vram_gb: float = 2.0,
+        estimated_vram_gb: Optional[float] = None,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
         self.device = device
         self.use_context = use_context
-        self.estimated_vram_gb = estimated_vram_gb
+        self.estimated_vram_gb = estimated_vram_gb if estimated_vram_gb is not None else get_model_vram_gb(model_name)
 
         ensure_candidates_extension()
 

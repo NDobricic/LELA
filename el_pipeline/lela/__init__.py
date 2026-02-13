@@ -13,6 +13,7 @@ Provides LELA-style components:
 from .config import (
     NER_LABELS,
     DEFAULT_GLINER_MODEL,
+    DEFAULT_GLINER_VRAM_GB,
     DEFAULT_LLM_MODEL,
     DEFAULT_EMBEDDER_MODEL,
     DEFAULT_RERANKER_MODEL,
@@ -29,6 +30,7 @@ from .config import (
     CROSS_ENCODER_SUFFIX,
     CROSS_ENCODER_QUERY_TEMPLATE,
     CROSS_ENCODER_DOCUMENT_TEMPLATE,
+    get_model_vram_gb,
 )
 
 from .prompts import (
@@ -48,6 +50,7 @@ __all__ = [
     # Config
     "NER_LABELS",
     "DEFAULT_GLINER_MODEL",
+    "DEFAULT_GLINER_VRAM_GB",
     "DEFAULT_LLM_MODEL",
     "DEFAULT_EMBEDDER_MODEL",
     "DEFAULT_RERANKER_MODEL",
@@ -64,6 +67,7 @@ __all__ = [
     "CROSS_ENCODER_SUFFIX",
     "CROSS_ENCODER_QUERY_TEMPLATE",
     "CROSS_ENCODER_DOCUMENT_TEMPLATE",
+    "get_model_vram_gb",
     # Prompts
     "DEFAULT_SYSTEM_PROMPT",
     "create_disambiguation_messages",

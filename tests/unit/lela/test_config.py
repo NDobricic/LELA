@@ -58,3 +58,38 @@ class TestLELAConfig:
 
     def test_tensor_parallel_size_default(self):
         assert config.DEFAULT_TENSOR_PARALLEL_SIZE >= 1
+
+    def test_model_tuples_have_vram_gb(self):
+        """All model tuples should have (model_id, display_name, vram_gb)."""
+        for model_list in (
+            config.AVAILABLE_LLM_MODELS,
+            config.AVAILABLE_EMBEDDING_MODELS,
+            config.AVAILABLE_CROSS_ENCODER_MODELS,
+            config.AVAILABLE_VLLM_RERANKER_MODELS,
+        ):
+            for entry in model_list:
+                assert len(entry) == 3, f"Expected 3-tuple, got {entry}"
+                model_id, display_name, vram_gb = entry
+                assert isinstance(model_id, str)
+                assert isinstance(display_name, str)
+                assert isinstance(vram_gb, (int, float))
+                assert vram_gb > 0
+
+    def test_get_model_vram_gb_known_models(self):
+        """get_model_vram_gb should return correct values for known models."""
+        for model_list in (
+            config.AVAILABLE_LLM_MODELS,
+            config.AVAILABLE_EMBEDDING_MODELS,
+            config.AVAILABLE_CROSS_ENCODER_MODELS,
+            config.AVAILABLE_VLLM_RERANKER_MODELS,
+        ):
+            for model_id, _, expected_vram in model_list:
+                assert config.get_model_vram_gb(model_id) == expected_vram
+
+    def test_get_model_vram_gb_unknown_model(self):
+        """get_model_vram_gb should return 2.0 for unknown models."""
+        assert config.get_model_vram_gb("unknown/model") == 2.0
+
+    def test_default_gliner_vram_gb(self):
+        assert isinstance(config.DEFAULT_GLINER_VRAM_GB, (int, float))
+        assert config.DEFAULT_GLINER_VRAM_GB > 0

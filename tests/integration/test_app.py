@@ -366,8 +366,6 @@ class TestRunPipeline:
             disambig_api_base_url="",
             disambig_api_key="",
             kb_type="custom",
-            ner_gpu_mem_gb=2.0,
-            cand_gpu_mem_gb=2.0,
             progress=mock_progress,
         )
         html_output, stats, result, _ = self._exhaust_generator(gen)
@@ -410,8 +408,6 @@ class TestRunPipeline:
             disambig_api_base_url="",
             disambig_api_key="",
             kb_type="custom",
-            ner_gpu_mem_gb=2.0,
-            cand_gpu_mem_gb=2.0,
             progress=mock_progress,
         )
         output = self._exhaust_generator(gen)
@@ -452,8 +448,6 @@ class TestRunPipeline:
             disambig_api_base_url="",
             disambig_api_key="",
             kb_type="custom",
-            ner_gpu_mem_gb=2.0,
-            cand_gpu_mem_gb=2.0,
             progress=mock_progress,
         )
         _, _, result, _ = self._exhaust_generator(gen)
@@ -497,8 +491,6 @@ class TestRunPipeline:
                 disambig_api_base_url="",
                 disambig_api_key="",
                 kb_type="custom",
-                ner_gpu_mem_gb=2.0,
-                cand_gpu_mem_gb=2.0,
                 progress=mock_progress,
             )
             html_output, stats, result, _ = self._exhaust_generator(gen)
@@ -539,8 +531,6 @@ class TestRunPipeline:
             disambig_api_base_url="",
             disambig_api_key="",
             kb_type="custom",
-            ner_gpu_mem_gb=2.0,
-            cand_gpu_mem_gb=2.0,
             progress=mock_progress,
         )
         html_output, stats, result, _ = self._exhaust_generator(gen)
@@ -582,8 +572,6 @@ class TestRunPipeline:
             disambig_api_base_url="",
             disambig_api_key="",
             kb_type="custom",
-            ner_gpu_mem_gb=2.0,
-            cand_gpu_mem_gb=2.0,
             progress=mock_progress,
         )
         html_output, _, _, _ = self._exhaust_generator(gen)

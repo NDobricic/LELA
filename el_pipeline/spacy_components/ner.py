@@ -20,6 +20,7 @@ from spacy.tokens import Doc, Span
 from el_pipeline.context import extract_context
 from el_pipeline.lela.config import (
     DEFAULT_GLINER_MODEL,
+    DEFAULT_GLINER_VRAM_GB,
     NER_LABELS,
 )
 from el_pipeline.utils import filter_spans, ensure_context_extension
@@ -58,7 +59,7 @@ def _get_gliner():
         "labels": list(NER_LABELS),
         "threshold": 0.5,
         "context_mode": "sentence",
-        "estimated_vram_gb": 2.0,
+        "estimated_vram_gb": DEFAULT_GLINER_VRAM_GB,
     },
 )
 def create_lela_gliner_component(
@@ -96,7 +97,7 @@ class LELAGLiNERComponent:
         labels: Optional[List[str]] = None,
         threshold: float = 0.5,
         context_mode: str = "sentence",
-        estimated_vram_gb: float = 2.0,
+        estimated_vram_gb: float = DEFAULT_GLINER_VRAM_GB,
     ):
         self.nlp = nlp
         self.model_name = model_name

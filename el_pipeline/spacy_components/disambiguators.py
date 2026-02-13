@@ -25,6 +25,7 @@ from el_pipeline.lela.config import (
     DEFAULT_GENERATION_CONFIG,
     SPAN_OPEN,
     SPAN_CLOSE,
+    get_model_vram_gb,
 )
 from el_pipeline.lela.prompts import (
     create_disambiguation_messages,
@@ -733,7 +734,7 @@ class LELAOpenAIAPIDisambiguatorComponent:
         "disable_thinking": False,
         "system_prompt": None,
         "generation_config": None,
-        "estimated_vram_gb": 10.0,
+        "estimated_vram_gb": get_model_vram_gb(DEFAULT_LLM_MODEL),
     },
 )
 def create_lela_transformers_disambiguator_component(
@@ -776,7 +777,7 @@ class LELATransformersDisambiguatorComponent:
         disable_thinking: bool = True,
         system_prompt: Optional[str] = None,
         generation_config: Optional[dict] = None,
-        estimated_vram_gb: float = 10.0,
+        estimated_vram_gb: Optional[float] = None,
     ):
         self.nlp = nlp
         self.model_name = model_name
@@ -785,7 +786,7 @@ class LELATransformersDisambiguatorComponent:
         self.disable_thinking = disable_thinking
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.generation_config = generation_config or DEFAULT_GENERATION_CONFIG
-        self.estimated_vram_gb = estimated_vram_gb
+        self.estimated_vram_gb = estimated_vram_gb if estimated_vram_gb is not None else get_model_vram_gb(model_name)
         self.model = None
         self.tokenizer = None
 
