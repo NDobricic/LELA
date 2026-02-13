@@ -2,12 +2,12 @@ import argparse
 import json
 from pathlib import Path
 
-from el_pipeline.config import PipelineConfig
-from el_pipeline.pipeline import ELPipeline
+from lela.config import PipelineConfig
+from lela.pipeline import ELPipeline
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run modular EL pipeline.")
+    parser = argparse.ArgumentParser(description="Run modular LELA.")
     parser.add_argument(
         "--config",
         type=str,

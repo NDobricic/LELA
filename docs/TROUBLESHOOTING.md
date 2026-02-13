@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide provides solutions for common issues encountered when installing and running the EL Pipeline.
+This guide provides solutions for common issues encountered when installing and running LELA.
 
 ## Table of Contents
 
@@ -134,11 +134,11 @@ The pipeline automatically chunks long documents. The default settings are:
 - Overlap: 200 characters
 - Sentence boundary detection to avoid splitting mid-sentence
 
-The chunking behavior is handled in `el_pipeline/spacy_components/ner.py` (lines 118-162). If you need to adjust:
+The chunking behavior is handled in `lela/spacy_components/ner.py` (lines 118-162). If you need to adjust:
 
 ```python
 # In your custom code, you can configure chunk parameters
-nlp.add_pipe("el_pipeline_lela_gliner", config={
+nlp.add_pipe("lela_lela_gliner", config={
     "threshold": 0.5,
     "labels": ["person", "organization", "location"]
 })
@@ -158,13 +158,13 @@ nlp.add_pipe("el_pipeline_lela_gliner", config={
 When building pipelines manually with spaCy:
 ```python
 import spacy
-from el_pipeline import spacy_components
-from el_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
+from lela import spacy_components
+from lela.knowledge_bases.custom import CustomJSONLKnowledgeBase
 
 nlp = spacy.blank("en")
-nlp.add_pipe("el_pipeline_simple")
-cand = nlp.add_pipe("el_pipeline_fuzzy_candidates")
-disamb = nlp.add_pipe("el_pipeline_first_disambiguator")
+nlp.add_pipe("lela_simple")
+cand = nlp.add_pipe("lela_fuzzy_candidates")
+disamb = nlp.add_pipe("lela_first_disambiguator")
 
 # Initialize with knowledge base
 kb = CustomJSONLKnowledgeBase(path="kb.jsonl")
@@ -297,13 +297,13 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 # Or for specific modules:
-logging.getLogger("el_pipeline").setLevel(logging.DEBUG)
-logging.getLogger("el_pipeline.spacy_components").setLevel(logging.DEBUG)
+logging.getLogger("lela").setLevel(logging.DEBUG)
+logging.getLogger("lela.spacy_components").setLevel(logging.DEBUG)
 ```
 
 **CLI:**
 ```bash
-python -m el_pipeline.cli --config config.json --input doc.txt --output out.jsonl 2>&1 | tee debug.log
+python -m lela.cli --config config.json --input doc.txt --output out.jsonl 2>&1 | tee debug.log
 ```
 
 **Web App:**
@@ -317,11 +317,11 @@ python app.py --log DEBUG
 
 ```python
 import spacy
-from el_pipeline import spacy_components
+from lela import spacy_components
 
 nlp = spacy.blank("en")
 # List available factories
-print(nlp.factory_names)  # Should include el_pipeline_* factories
+print(nlp.factory_names)  # Should include lela_* factories
 ```
 
 ---
@@ -358,7 +358,7 @@ for ent in doc.ents:
 
 If you encounter issues not covered here:
 
-1. Check the [GitHub Issues](https://github.com/NDobricic/el-pipeline/issues)
+1. Check the [GitHub Issues](https://github.com/NDobricic/lela/issues)
 2. Enable debug logging and examine the output
 3. Verify your environment matches the [Requirements](REQUIREMENTS.md)
 4. Try a minimal configuration to isolate the issue

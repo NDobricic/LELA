@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from el_pipeline.memory import gb_to_vllm_fraction
+from lela.memory import gb_to_vllm_fraction
 
 
 class TestGbToVllmFraction:

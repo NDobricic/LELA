@@ -1,5 +1,5 @@
 """
-LELA integration module for el-pipeline.
+LELA integration module for lela.
 
 Provides LELA-style components:
 - GLiNER zero-shot NER (via gliner_spacy)

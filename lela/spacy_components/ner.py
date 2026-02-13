@@ -1,5 +1,5 @@
 """
-spaCy NER components for the EL pipeline.
+spaCy NER components for LELA.
 
 Provides factories and components for various NER implementations:
 - LELAGLiNERComponent: Zero-shot GLiNER NER
@@ -17,13 +17,13 @@ from typing import List, Optional, Callable
 from spacy.language import Language
 from spacy.tokens import Doc, Span
 
-from el_pipeline.context import extract_context
-from el_pipeline.lela.config import (
+from lela.context import extract_context
+from lela.lela.config import (
     DEFAULT_GLINER_MODEL,
     DEFAULT_GLINER_VRAM_GB,
     NER_LABELS,
 )
-from el_pipeline.utils import filter_spans, ensure_context_extension
+from lela.utils import filter_spans, ensure_context_extension
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def _get_gliner():
 
 
 @Language.factory(
-    "el_pipeline_lela_gliner",
+    "lela_lela_gliner",
     default_config={
         "model_name": DEFAULT_GLINER_MODEL,
         "labels": list(NER_LABELS),
@@ -114,7 +114,7 @@ class LELAGLiNERComponent:
     def _ensure_model_loaded(self):
         if self.model is not None:
             return
-        from el_pipeline.lela.llm_pool import get_generic_instance
+        from lela.lela.llm_pool import get_generic_instance
 
         key = f"gliner:{self.model_name}"
 
@@ -213,7 +213,7 @@ class LELAGLiNERComponent:
                 f"Extracted {len(doc.ents)} entities from document ({len(text)} chars)"
             )
         finally:
-            from el_pipeline.lela.llm_pool import release_generic
+            from lela.lela.llm_pool import release_generic
 
             release_generic(f"gliner:{self.model_name}")
             self.model = None
@@ -227,7 +227,7 @@ class LELAGLiNERComponent:
 
 
 @Language.factory(
-    "el_pipeline_simple",
+    "lela_simple",
     default_config={
         "min_len": 3,
         "context_mode": "sentence",
@@ -300,7 +300,7 @@ class SimpleNERComponent:
 
 
 @Language.factory(
-    "el_pipeline_gliner",
+    "lela_gliner",
     default_config={
         "model_name": "urchade/gliner_base",
         "labels": ["person", "organization", "location"],
@@ -360,7 +360,7 @@ class GLiNERComponent:
     def _ensure_model_loaded(self):
         if self.model is not None:
             return
-        from el_pipeline.lela.llm_pool import get_generic_instance
+        from lela.lela.llm_pool import get_generic_instance
 
         key = f"gliner:{self.model_name}"
 
@@ -405,7 +405,7 @@ class GLiNERComponent:
 
             doc.ents = filter_spans(spans)
         finally:
-            from el_pipeline.lela.llm_pool import release_generic
+            from lela.lela.llm_pool import release_generic
 
             release_generic(f"gliner:{self.model_name}")
             self.model = None
@@ -418,7 +418,7 @@ class GLiNERComponent:
 # ============================================================================
 
 
-@Language.component("el_pipeline_ner_filter")
+@Language.component("lela_ner_filter")
 def ner_filter_component(doc: Doc) -> Doc:
     """
     Post-filter for spaCy's built-in NER.

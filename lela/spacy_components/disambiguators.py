@@ -1,5 +1,5 @@
 """
-spaCy disambiguator components for the EL pipeline.
+spaCy disambiguator components for LELA.
 
 Provides factories and components for entity disambiguation:
 - LELAvLLMDisambiguatorComponent: vLLM-based LLM disambiguation (all candidates at once)
@@ -17,8 +17,8 @@ import requests
 from spacy.language import Language
 from spacy.tokens import Doc, Span
 
-from el_pipeline.knowledge_bases.base import KnowledgeBase
-from el_pipeline.lela.config import (
+from lela.knowledge_bases.base import KnowledgeBase
+from lela.lela.config import (
     DEFAULT_LLM_MODEL,
     DEFAULT_TENSOR_PARALLEL_SIZE,
     DEFAULT_MAX_MODEL_LEN,
@@ -27,17 +27,17 @@ from el_pipeline.lela.config import (
     SPAN_CLOSE,
     get_model_vram_gb,
 )
-from el_pipeline.lela.prompts import (
+from lela.lela.prompts import (
     create_disambiguation_messages,
     DEFAULT_SYSTEM_PROMPT,
 )
-from el_pipeline.lela.llm_pool import get_vllm_instance, release_vllm, get_generic_instance, release_generic
-from el_pipeline.memory import gb_to_vllm_fraction
-from el_pipeline.utils import (
+from lela.lela.llm_pool import get_vllm_instance, release_vllm, get_generic_instance, release_generic
+from lela.memory import gb_to_vllm_fraction
+from lela.utils import (
     ensure_candidates_extension,
     ensure_resolved_entity_extension,
 )
-from el_pipeline.types import Candidate, ProgressCallback
+from lela.types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ def _ensure_extensions():
 
 
 @Language.factory(
-    "el_pipeline_lela_vllm_disambiguator",
+    "lela_lela_vllm_disambiguator",
     default_config={
         "model_name": DEFAULT_LLM_MODEL,
         "tensor_parallel_size": DEFAULT_TENSOR_PARALLEL_SIZE,
@@ -433,7 +433,7 @@ class LELAvLLMDisambiguatorComponent:
 
 
 @Language.factory(
-    "el_pipeline_lela_openai_api_disambiguator",
+    "lela_lela_openai_api_disambiguator",
     default_config={
         "model_name": None,
         "base_url": "http://localhost:8000/v1",
@@ -726,7 +726,7 @@ class LELAOpenAIAPIDisambiguatorComponent:
 
 
 @Language.factory(
-    "el_pipeline_lela_transformers_disambiguator",
+    "lela_lela_transformers_disambiguator",
     default_config={
         "model_name": DEFAULT_LLM_MODEL,
         "add_none_candidate": True,  # Enable NIL handling by default
@@ -997,7 +997,7 @@ class LELATransformersDisambiguatorComponent:
 
 
 @Language.factory(
-    "el_pipeline_first_disambiguator",
+    "lela_first_disambiguator",
     default_config={},
 )
 def create_first_disambiguator_component(

@@ -15,7 +15,7 @@ import sys
 
 import torch
 
-from el_pipeline.lela.config import (
+from lela.lela.config import (
     AVAILABLE_LLM_MODELS,
     AVAILABLE_EMBEDDING_MODELS,
     AVAILABLE_CROSS_ENCODER_MODELS,

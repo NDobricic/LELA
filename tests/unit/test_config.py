@@ -2,7 +2,7 @@
 
 import pytest
 
-from el_pipeline.config import ComponentConfig, PipelineConfig
+from lela.config import ComponentConfig, PipelineConfig
 
 
 class TestComponentConfig:

@@ -1,5 +1,5 @@
 """
-spaCy candidate generation components for the EL pipeline.
+spaCy candidate generation components for LELA.
 
 Provides factories and components for candidate generation:
 - LELADenseCandidatesComponent: Dense retrieval using embeddings + FAISS
@@ -19,19 +19,19 @@ import requests
 from spacy.language import Language
 from spacy.tokens import Doc, Span
 
-from el_pipeline.knowledge_bases.base import KnowledgeBase
-from el_pipeline.lela.config import (
+from lela.knowledge_bases.base import KnowledgeBase
+from lela.lela.config import (
     CANDIDATES_TOP_K,
     DEFAULT_EMBEDDER_MODEL,
     RETRIEVER_TASK,
     get_model_vram_gb,
 )
-from el_pipeline.lela.llm_pool import (
+from lela.lela.llm_pool import (
     get_sentence_transformer_instance,
     release_sentence_transformer,
 )
-from el_pipeline.utils import ensure_candidates_extension
-from el_pipeline.types import Candidate, ProgressCallback
+from lela.utils import ensure_candidates_extension
+from lela.types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def _get_faiss():
 
 
 @Language.factory(
-    "el_pipeline_lela_dense_candidates",
+    "lela_lela_dense_candidates",
     default_config={
         "model_name": DEFAULT_EMBEDDER_MODEL,
         "top_k": CANDIDATES_TOP_K,
@@ -329,7 +329,7 @@ class LELADenseCandidatesComponent:
 
 
 @Language.factory(
-    "el_pipeline_lela_openai_api_dense_candidates",
+    "lela_lela_openai_api_dense_candidates",
     default_config={
         "model_name": None,
         "base_url": "http://localhost:8000/v1",
@@ -630,7 +630,7 @@ class LELAOpenAIAPIDenseCandidatesComponent:
 
 
 @Language.factory(
-    "el_pipeline_fuzzy_candidates",
+    "lela_fuzzy_candidates",
     default_config={
         "top_k": 20,
     },
@@ -789,7 +789,7 @@ class FuzzyCandidatesComponent:
 
 
 @Language.factory(
-    "el_pipeline_bm25_candidates",
+    "lela_bm25_candidates",
     default_config={
         "top_k": 20,
     },

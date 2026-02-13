@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from el_pipeline.lela.llm_pool import (
+from lela.lela.llm_pool import (
     _get_sentence_transformers,
     get_sentence_transformer_instance,
     clear_sentence_transformer_instances,
@@ -26,7 +26,7 @@ class TestSentenceTransformerPool:
         # Just verify the function exists and is callable
         assert callable(_get_sentence_transformers)
 
-    @patch("el_pipeline.lela.llm_pool._get_sentence_transformers")
+    @patch("lela.lela.llm_pool._get_sentence_transformers")
     @patch.dict("sys.modules", {"torch": MagicMock()})
     def test_get_sentence_transformer_instance_creates_model(self, mock_get_st):
         import sys
@@ -52,7 +52,7 @@ class TestSentenceTransformerPool:
         assert call_kwargs[1]["device"] == "cuda"
         assert call_kwargs[1]["trust_remote_code"] is True
 
-    @patch("el_pipeline.lela.llm_pool._get_sentence_transformers")
+    @patch("lela.lela.llm_pool._get_sentence_transformers")
     @patch.dict("sys.modules", {"torch": MagicMock()})
     def test_get_sentence_transformer_instance_reuses_model(self, mock_get_st):
         import sys
@@ -75,7 +75,7 @@ class TestSentenceTransformerPool:
         assert not cached1
         assert cached2
 
-    @patch("el_pipeline.lela.llm_pool._get_sentence_transformers")
+    @patch("lela.lela.llm_pool._get_sentence_transformers")
     @patch.dict("sys.modules", {"torch": MagicMock()})
     def test_different_devices_create_different_instances(self, mock_get_st):
         import sys
@@ -98,7 +98,7 @@ class TestSentenceTransformerPool:
         # Should not raise and should do nothing without force=True
         clear_sentence_transformer_instances()
 
-    @patch("el_pipeline.lela.llm_pool._get_sentence_transformers")
+    @patch("lela.lela.llm_pool._get_sentence_transformers")
     @patch.dict("sys.modules", {"torch": MagicMock()})
     def test_clear_sentence_transformer_instances_force(self, mock_get_st):
         import sys
@@ -139,7 +139,7 @@ class TestVLLMInstanceManagement:
         # Should not raise
         clear_vllm_instances()
 
-    @patch("el_pipeline.lela.llm_pool._get_vllm")
+    @patch("lela.lela.llm_pool._get_vllm")
     def test_get_vllm_instance_creates_model(self, mock_get_vllm):
         mock_vllm = MagicMock()
         mock_llm = MagicMock()
@@ -159,7 +159,7 @@ class TestVLLMInstanceManagement:
         assert call_kwargs["model"] == "test-model"
         assert call_kwargs["tensor_parallel_size"] == 1
 
-    @patch("el_pipeline.lela.llm_pool._get_vllm")
+    @patch("lela.lela.llm_pool._get_vllm")
     def test_get_vllm_instance_reuses_model(self, mock_get_vllm):
         mock_vllm = MagicMock()
         mock_llm = MagicMock()
@@ -177,7 +177,7 @@ class TestVLLMInstanceManagement:
         assert not cached1
         assert cached2
 
-    @patch("el_pipeline.lela.llm_pool._get_vllm")
+    @patch("lela.lela.llm_pool._get_vllm")
     def test_different_configs_create_different_instances(self, mock_get_vllm):
         mock_vllm = MagicMock()
         mock_vllm.LLM.side_effect = [MagicMock(), MagicMock()]
@@ -191,7 +191,7 @@ class TestVLLMInstanceManagement:
         # Different tensor_parallel_size should create different instances
         assert mock_vllm.LLM.call_count == 2
 
-    @patch("el_pipeline.lela.llm_pool._get_vllm")
+    @patch("lela.lela.llm_pool._get_vllm")
     def test_max_model_len_passed_when_specified(self, mock_get_vllm):
         mock_vllm = MagicMock()
         mock_get_vllm.return_value = mock_vllm
@@ -203,7 +203,7 @@ class TestVLLMInstanceManagement:
         call_kwargs = mock_vllm.LLM.call_args[1]
         assert call_kwargs["max_model_len"] == 4096
 
-    @patch("el_pipeline.lela.llm_pool._get_vllm")
+    @patch("lela.lela.llm_pool._get_vllm")
     def test_gpu_memory_utilization_passed(self, mock_get_vllm):
         mock_vllm = MagicMock()
         mock_get_vllm.return_value = mock_vllm
@@ -215,7 +215,7 @@ class TestVLLMInstanceManagement:
         call_kwargs = mock_vllm.LLM.call_args[1]
         assert call_kwargs["gpu_memory_utilization"] == 0.7
 
-    @patch("el_pipeline.lela.llm_pool._get_vllm")
+    @patch("lela.lela.llm_pool._get_vllm")
     def test_gpu_memory_utilization_default(self, mock_get_vllm):
         mock_vllm = MagicMock()
         mock_get_vllm.return_value = mock_vllm
@@ -227,7 +227,7 @@ class TestVLLMInstanceManagement:
         call_kwargs = mock_vllm.LLM.call_args[1]
         assert call_kwargs["gpu_memory_utilization"] == 0.9  # default from config
 
-    @patch("el_pipeline.lela.llm_pool._get_vllm")
+    @patch("lela.lela.llm_pool._get_vllm")
     def test_different_gpu_memory_creates_different_instances(self, mock_get_vllm):
         mock_vllm = MagicMock()
         mock_vllm.LLM.side_effect = [MagicMock(), MagicMock()]
@@ -299,8 +299,8 @@ class TestGenericPool:
 class TestClearAllModels:
     """Tests for clear_all_models function."""
 
-    @patch("el_pipeline.lela.llm_pool._get_sentence_transformers")
-    @patch("el_pipeline.lela.llm_pool._get_vllm")
+    @patch("lela.lela.llm_pool._get_sentence_transformers")
+    @patch("lela.lela.llm_pool._get_vllm")
     @patch.dict("sys.modules", {"torch": MagicMock()})
     def test_clear_all_models(self, mock_get_vllm, mock_get_st):
         import sys

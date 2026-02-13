@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'win32'",
@@ -811,43 +811,6 @@ wheels = [
 ]
 
 [[package]]
-name = "el-pipeline"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "beautifulsoup4" },
-    { name = "bm25s" },
-    { name = "faiss-cpu" },
-    { name = "gliner" },
-    { name = "gradio" },
-    { name = "pdfplumber" },
-    { name = "pystemmer" },
-    { name = "python-docx" },
-    { name = "rank-bm25" },
-    { name = "rapidfuzz" },
-    { name = "sentence-transformers" },
-    { name = "spacy" },
-    { name = "vllm" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "beautifulsoup4", specifier = ">=4.14.3" },
-    { name = "bm25s", specifier = ">=0.2.14" },
-    { name = "faiss-cpu", specifier = ">=1.13.2" },
-    { name = "gliner", specifier = ">=0.2.24" },
-    { name = "gradio", specifier = ">=6.5.1" },
-    { name = "pdfplumber", specifier = ">=0.11.9" },
-    { name = "pystemmer", specifier = ">=3.0.0" },
-    { name = "python-docx", specifier = ">=1.2.0" },
-    { name = "rank-bm25", specifier = ">=0.2.2" },
-    { name = "rapidfuzz", specifier = "==3.14.3" },
-    { name = "sentence-transformers", specifier = ">=5.2.2" },
-    { name = "spacy", specifier = ">=3.8.11" },
-    { name = "vllm", specifier = ">=0.15.0" },
-]
-
-[[package]]
 name = "email-validator"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1634,6 +1597,43 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/af/60/bc7622aefb2aee1c0b4ba23c1446d3e30225c8770b38d7aedbfb65ca9d5a/lark-1.2.2.tar.gz", hash = "sha256:ca807d0162cd16cef15a8feecb862d7319e7a09bdb13aef927968e45040fed80", size = 252132, upload-time = "2024-08-13T19:49:00.652Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2d/00/d90b10b962b4277f5e64a78b6609968859ff86889f5b898c1a778c06ec00/lark-1.2.2-py3-none-any.whl", hash = "sha256:c2276486b02f0f1b90be155f2c8ba4a8e194d42775786db622faccd652d8e80c", size = 111036, upload-time = "2024-08-13T19:48:58.603Z" },
+]
+
+[[package]]
+name = "lela"
+version = "0.2.0"
+source = { editable = "." }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "bm25s" },
+    { name = "faiss-cpu" },
+    { name = "gliner" },
+    { name = "gradio" },
+    { name = "pdfplumber" },
+    { name = "pystemmer" },
+    { name = "python-docx" },
+    { name = "rank-bm25" },
+    { name = "rapidfuzz" },
+    { name = "sentence-transformers" },
+    { name = "spacy" },
+    { name = "vllm" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "beautifulsoup4", specifier = ">=4.14.3" },
+    { name = "bm25s", specifier = ">=0.2.14" },
+    { name = "faiss-cpu", specifier = ">=1.13.2" },
+    { name = "gliner", specifier = ">=0.2.24" },
+    { name = "gradio", specifier = ">=6.5.1" },
+    { name = "pdfplumber", specifier = ">=0.11.9" },
+    { name = "pystemmer", specifier = ">=3.0.0" },
+    { name = "python-docx", specifier = ">=1.2.0" },
+    { name = "rank-bm25", specifier = ">=0.2.2" },
+    { name = "rapidfuzz", specifier = "==3.14.3" },
+    { name = "sentence-transformers", specifier = ">=5.2.2" },
+    { name = "spacy", specifier = ">=3.8.11" },
+    { name = "vllm", specifier = ">=0.15.0" },
 ]
 
 [[package]]

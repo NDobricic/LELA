@@ -6,8 +6,8 @@ import pytest
 import spacy
 from spacy.tokens import Span
 
-from el_pipeline.types import Candidate
-from el_pipeline.utils import ensure_candidates_extension
+from lela.types import Candidate
+from lela.utils import ensure_candidates_extension
 
 
 @pytest.fixture
@@ -36,9 +36,9 @@ def _make_score_output(score: float):
 class TestLELACrossEncoderVLLMRerankerComponent:
     """Tests for LELACrossEncoderVLLMRerankerComponent."""
 
-    @patch("el_pipeline.spacy_components.rerankers.release_vllm")
-    @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
-    @patch("el_pipeline.spacy_components.rerankers._get_vllm")
+    @patch("lela.spacy_components.rerankers.release_vllm")
+    @patch("lela.spacy_components.rerankers.get_vllm_instance")
+    @patch("lela.spacy_components.rerankers._get_vllm")
     def test_rerank_returns_candidates(
         self, mock_get_vllm_mod, mock_get_instance, mock_release, sample_candidates, nlp
     ):
@@ -55,7 +55,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_vllm_mod = MagicMock()
         mock_get_vllm_mod.return_value = mock_vllm_mod
 
-        from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
+        from lela.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
         ensure_candidates_extension()
 
         reranker = LELACrossEncoderVLLMRerankerComponent(nlp=nlp, top_k=3)
@@ -69,9 +69,9 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         assert len(result) == 3
         assert all(isinstance(c, Candidate) for c in result)
 
-    @patch("el_pipeline.spacy_components.rerankers.release_vllm")
-    @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
-    @patch("el_pipeline.spacy_components.rerankers._get_vllm")
+    @patch("lela.spacy_components.rerankers.release_vllm")
+    @patch("lela.spacy_components.rerankers.get_vllm_instance")
+    @patch("lela.spacy_components.rerankers._get_vllm")
     def test_rerank_sorts_by_score(
         self, mock_get_vllm_mod, mock_get_instance, mock_release, sample_candidates, nlp
     ):
@@ -88,7 +88,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_vllm_mod = MagicMock()
         mock_get_vllm_mod.return_value = mock_vllm_mod
 
-        from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
+        from lela.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
         ensure_candidates_extension()
 
         reranker = LELACrossEncoderVLLMRerankerComponent(nlp=nlp, top_k=3)
@@ -103,9 +103,9 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         assert result[1].entity_id == "E5"
         assert result[2].entity_id == "E2"
 
-    @patch("el_pipeline.spacy_components.rerankers.release_vllm")
-    @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
-    @patch("el_pipeline.spacy_components.rerankers._get_vllm")
+    @patch("lela.spacy_components.rerankers.release_vllm")
+    @patch("lela.spacy_components.rerankers.get_vllm_instance")
+    @patch("lela.spacy_components.rerankers._get_vllm")
     def test_skips_reranking_when_candidates_below_top_k(
         self, mock_get_vllm_mod, mock_get_instance, mock_release, nlp
     ):
@@ -116,7 +116,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_vllm_mod = MagicMock()
         mock_get_vllm_mod.return_value = mock_vllm_mod
 
-        from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
+        from lela.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
         ensure_candidates_extension()
 
         reranker = LELACrossEncoderVLLMRerankerComponent(nlp=nlp, top_k=5)
@@ -130,9 +130,9 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_model.score.assert_not_called()
         assert len(doc.ents[0]._.candidates) == 3
 
-    @patch("el_pipeline.spacy_components.rerankers.release_vllm")
-    @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
-    @patch("el_pipeline.spacy_components.rerankers._get_vllm")
+    @patch("lela.spacy_components.rerankers.release_vllm")
+    @patch("lela.spacy_components.rerankers.get_vllm_instance")
+    @patch("lela.spacy_components.rerankers._get_vllm")
     def test_score_called_with_batched_queries_and_documents(
         self, mock_get_vllm_mod, mock_get_instance, mock_release, sample_candidates, nlp
     ):
@@ -144,7 +144,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_vllm_mod = MagicMock()
         mock_get_vllm_mod.return_value = mock_vllm_mod
 
-        from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
+        from lela.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
         ensure_candidates_extension()
 
         reranker = LELACrossEncoderVLLMRerankerComponent(nlp=nlp, top_k=3)
@@ -167,9 +167,9 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         assert "<Document>" in documents[0]
         assert "E1 (Description 1)" in documents[0]
 
-    @patch("el_pipeline.spacy_components.rerankers.release_vllm")
-    @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
-    @patch("el_pipeline.spacy_components.rerankers._get_vllm")
+    @patch("lela.spacy_components.rerankers.release_vllm")
+    @patch("lela.spacy_components.rerankers.get_vllm_instance")
+    @patch("lela.spacy_components.rerankers._get_vllm")
     def test_preserves_descriptions(
         self, mock_get_vllm_mod, mock_get_instance, mock_release, sample_candidates, nlp
     ):
@@ -182,7 +182,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_vllm_mod = MagicMock()
         mock_get_vllm_mod.return_value = mock_vllm_mod
 
-        from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
+        from lela.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
         ensure_candidates_extension()
 
         reranker = LELACrossEncoderVLLMRerankerComponent(nlp=nlp, top_k=3)
@@ -196,9 +196,9 @@ class TestLELACrossEncoderVLLMRerankerComponent:
             original = next(o for o in sample_candidates if o.entity_id == candidate.entity_id)
             assert candidate.description == original.description
 
-    @patch("el_pipeline.spacy_components.rerankers.release_vllm")
-    @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
-    @patch("el_pipeline.spacy_components.rerankers._get_vllm")
+    @patch("lela.spacy_components.rerankers.release_vllm")
+    @patch("lela.spacy_components.rerankers.get_vllm_instance")
+    @patch("lela.spacy_components.rerankers._get_vllm")
     def test_releases_vllm_after_use(
         self, mock_get_vllm_mod, mock_get_instance, mock_release, sample_candidates, nlp
     ):
@@ -209,7 +209,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_vllm_mod = MagicMock()
         mock_get_vllm_mod.return_value = mock_vllm_mod
 
-        from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
+        from lela.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
         ensure_candidates_extension()
 
         reranker = LELACrossEncoderVLLMRerankerComponent(nlp=nlp, top_k=3)
@@ -222,7 +222,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_release.assert_called_once_with(reranker.model_name, gpu_memory_utilization=reranker.gpu_memory_utilization)
 
     def test_initialization_with_custom_params(self, nlp):
-        from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
+        from lela.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
         reranker = LELACrossEncoderVLLMRerankerComponent(
             nlp=nlp,
             model_name="custom-reranker-model",
@@ -233,9 +233,9 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         assert reranker.max_model_len is None
         assert reranker.model is None
 
-    @patch("el_pipeline.spacy_components.rerankers.release_vllm")
-    @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
-    @patch("el_pipeline.spacy_components.rerankers._get_vllm")
+    @patch("lela.spacy_components.rerankers.release_vllm")
+    @patch("lela.spacy_components.rerankers.get_vllm_instance")
+    @patch("lela.spacy_components.rerankers._get_vllm")
     def test_passes_custom_max_model_len(
         self, mock_get_vllm_mod, mock_get_instance, mock_release, sample_candidates, nlp
     ):
@@ -244,7 +244,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_get_instance.return_value = (mock_model, False)
         mock_get_vllm_mod.return_value = MagicMock()
 
-        from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
+        from lela.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
 
         ensure_candidates_extension()
         reranker = LELACrossEncoderVLLMRerankerComponent(
@@ -260,9 +260,9 @@ class TestLELACrossEncoderVLLMRerankerComponent:
 
         assert mock_get_instance.call_args.kwargs["max_model_len"] == 4096
 
-    @patch("el_pipeline.spacy_components.rerankers.release_vllm")
-    @patch("el_pipeline.spacy_components.rerankers.get_vllm_instance")
-    @patch("el_pipeline.spacy_components.rerankers._get_vllm")
+    @patch("lela.spacy_components.rerankers.release_vllm")
+    @patch("lela.spacy_components.rerankers.get_vllm_instance")
+    @patch("lela.spacy_components.rerankers._get_vllm")
     def test_loads_vllm_with_hf_overrides(
         self, mock_get_vllm_mod, mock_get_instance, mock_release, sample_candidates, nlp
     ):
@@ -274,7 +274,7 @@ class TestLELACrossEncoderVLLMRerankerComponent:
         mock_vllm_mod = MagicMock()
         mock_get_vllm_mod.return_value = mock_vllm_mod
 
-        from el_pipeline.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
+        from lela.spacy_components.rerankers import LELACrossEncoderVLLMRerankerComponent
         ensure_candidates_extension()
 
         reranker = LELACrossEncoderVLLMRerankerComponent(nlp=nlp, top_k=3)

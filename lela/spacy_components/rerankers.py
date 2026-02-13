@@ -1,5 +1,5 @@
 """
-spaCy reranker components for the EL pipeline.
+spaCy reranker components for LELA.
 
 Provides factories and components for candidate reranking:
 - CrossEncoderRerankerComponent: Cross-encoder reranking (sentence-transformers)
@@ -19,7 +19,7 @@ import numpy as np
 from spacy.language import Language
 from spacy.tokens import Doc, Span
 
-from el_pipeline.lela.config import (
+from lela.lela.config import (
     RERANKER_TOP_K,
     DEFAULT_EMBEDDER_MODEL,
     DEFAULT_VLLM_RERANKER_MODEL,
@@ -30,7 +30,7 @@ from el_pipeline.lela.config import (
     CROSS_ENCODER_SUFFIX,
     get_model_vram_gb,
 )
-from el_pipeline.lela.llm_pool import (
+from lela.lela.llm_pool import (
     get_sentence_transformer_instance,
     release_sentence_transformer,
     get_vllm_instance,
@@ -38,9 +38,9 @@ from el_pipeline.lela.llm_pool import (
     get_generic_instance,
     release_generic,
 )
-from el_pipeline.memory import gb_to_vllm_fraction
-from el_pipeline.utils import ensure_candidates_extension
-from el_pipeline.types import Candidate, ProgressCallback
+from lela.memory import gb_to_vllm_fraction
+from lela.utils import ensure_candidates_extension
+from lela.types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def _get_vllm():
 
 
 @Language.factory(
-    "el_pipeline_lela_cross_encoder_reranker",
+    "lela_lela_cross_encoder_reranker",
     default_config={
         "model_name": "Qwen/Qwen3-Reranker-4B-seq-cls",
         "top_k": 10,
@@ -224,7 +224,7 @@ class CrossEncoderRerankerComponent:
 
 
 @Language.factory(
-    "el_pipeline_lela_vllm_api_client_reranker",
+    "lela_lela_vllm_api_client_reranker",
     default_config={
         "top_k": 10,
         "base_url": "http://localhost",
@@ -347,7 +347,7 @@ class VLLMAPIClientReranker:
 
 
 @Language.factory(
-    "el_pipeline_noop_reranker",
+    "lela_noop_reranker",
     default_config={"top_k": 10},
 )
 def create_noop_reranker_component(
@@ -386,7 +386,7 @@ class NoOpRerankerComponent:
 
 
 @Language.factory(
-    "el_pipeline_lela_llama_server_reranker",
+    "lela_lela_llama_server_reranker",
     default_config={
         "model_name": "qwen3-reranker",
         "top_k": 10,
@@ -527,7 +527,7 @@ class LlamaServerReranker:
 
 
 @Language.factory(
-    "el_pipeline_lela_embedder_transformers_reranker",
+    "lela_lela_embedder_transformers_reranker",
     default_config={
         "model_name": DEFAULT_EMBEDDER_MODEL,
         "top_k": RERANKER_TOP_K,
@@ -688,7 +688,7 @@ class LELAEmbedderRerankerComponent:
 
 
 @Language.factory(
-    "el_pipeline_lela_cross_encoder_vllm_reranker",
+    "lela_lela_cross_encoder_vllm_reranker",
     default_config={
         "model_name": DEFAULT_VLLM_RERANKER_MODEL,
         "top_k": RERANKER_TOP_K,
@@ -878,7 +878,7 @@ class LELACrossEncoderVLLMRerankerComponent:
 
 
 @Language.factory(
-    "el_pipeline_lela_embedder_vllm_reranker",
+    "lela_lela_embedder_vllm_reranker",
     default_config={
         "model_name": DEFAULT_EMBEDDER_MODEL,
         "top_k": RERANKER_TOP_K,

@@ -7,9 +7,9 @@ import time
 
 import pytest
 
-from el_pipeline.config import PipelineConfig
-from el_pipeline.pipeline import ELPipeline
-from el_pipeline.types import Document
+from lela.config import PipelineConfig
+from lela.pipeline import ELPipeline
+from lela.types import Document
 
 
 @pytest.mark.integration
@@ -131,7 +131,7 @@ class TestKBCacheInvalidationIntegration:
     def test_clean_cache_rebuilds(self, temp_cache_dir: str, temp_jsonl_kb: str):
         """Deleting the cache directory forces rebuild."""
         import shutil
-        from el_pipeline.knowledge_bases.custom import clear_kb_cache
+        from lela.knowledge_bases.custom import clear_kb_cache
 
         config_dict = {
             "loader": {"name": "text"},

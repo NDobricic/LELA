@@ -1,5 +1,5 @@
 """
-System resource detection for the EL pipeline.
+System resource detection for LELA.
 
 Provides utilities to detect available GPU and system memory.
 """

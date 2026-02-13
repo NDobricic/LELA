@@ -1,6 +1,10 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "el-pipeline"
-version = "0.1.0"
+name = "lela"
+version = "0.2.0"
 description = "A modular NER and entity linking pipeline"
 requires-python = ">=3.10,<3.13"
 dependencies = [
@@ -18,6 +22,9 @@ dependencies = [
     "spacy>=3.8.11",
     "vllm>=0.15.0",
 ]
+
+[project.scripts]
+lela = "lela.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -38,9 +45,9 @@ filterwarnings = [
 addopts = "-v --tb=short"
 
 [tool.coverage.run]
-source = ["el_pipeline"]
+source = ["lela"]
 omit = [
-    "el_pipeline/scripts/*",
+    "lela/scripts/*",
     "*/__pycache__/*",
 ]
 

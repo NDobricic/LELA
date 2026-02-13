@@ -1,9 +1,9 @@
 """
-Shared utilities for the EL pipeline.
+Shared utilities for LELA.
 """
 
-from el_pipeline.utils.spans import filter_spans
-from el_pipeline.utils.extensions import (
+from lela.utils.spans import filter_spans
+from lela.utils.extensions import (
     ensure_candidates_extension,
     ensure_resolved_entity_extension,
     ensure_context_extension,

@@ -1,4 +1,4 @@
-"""Integration tests for the EL pipeline."""
+"""Integration tests for LELA."""
 
 import json
 import os
@@ -6,9 +6,9 @@ import tempfile
 
 import pytest
 
-from el_pipeline.config import PipelineConfig
-from el_pipeline.pipeline import ELPipeline
-from el_pipeline.types import Document
+from lela.config import PipelineConfig
+from lela.pipeline import ELPipeline
+from lela.types import Document
 
 
 @pytest.mark.integration

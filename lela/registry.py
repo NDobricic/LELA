@@ -1,5 +1,5 @@
 """
-Component registry for EL pipeline.
+Component registry for LELA.
 
 Provides pluggable component registration for document loaders
 and knowledge bases. NER, candidate generation, reranking, and

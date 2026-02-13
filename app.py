@@ -14,10 +14,10 @@ import torch
 # Global cancellation event for cooperative cancellation
 _cancel_event = threading.Event()
 
-from el_pipeline.config import PipelineConfig
-from el_pipeline.pipeline import ELPipeline
-from el_pipeline.memory import get_system_resources
-from el_pipeline.lela.config import (
+from lela.config import PipelineConfig
+from lela.pipeline import ELPipeline
+from lela.memory import get_system_resources
+from lela.lela.config import (
     AVAILABLE_LLM_MODELS as LLM_MODEL_CHOICES,
     AVAILABLE_EMBEDDING_MODELS as EMBEDDING_MODEL_CHOICES,
     AVAILABLE_CROSS_ENCODER_MODELS as CROSS_ENCODER_MODEL_CHOICES,
@@ -28,7 +28,7 @@ from el_pipeline.lela.config import (
     DEFAULT_MAX_MODEL_LEN,
     get_model_vram_gb,
 )
-from el_pipeline.lela.llm_pool import clear_all_models
+from lela.lela.llm_pool import clear_all_models
 
 TITLE_HTML = """
 <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:4px;">
@@ -79,7 +79,7 @@ def _is_vllm_usable() -> bool:
 
 def get_available_components() -> Dict[str, List[str]]:
     """Get list of available spaCy pipeline components."""
-    # These map to spaCy factories registered in el_pipeline.spacy_components
+    # These map to spaCy factories registered in lela.spacy_components
     available_disambiguators = [
         "none",
         "first",
@@ -597,7 +597,7 @@ def run_pipeline(
     kb_type: str,
     progress=gr.Progress(),
 ):
-    """Run the EL pipeline with selected configuration.
+    """Run LELA with selected configuration.
 
     This is a generator function that yields (html_output, stats, result) tuples.
     Yielding allows Gradio to check for cancellation between steps.
@@ -623,7 +623,7 @@ def run_pipeline(
     no_mode_change = gr.update()
 
     if not kb_file:
-        from el_pipeline.knowledge_bases.yago_downloader import ensure_yago_kb
+        from lela.knowledge_bases.yago_downloader import ensure_yago_kb
 
         kb_path = _run_with_heartbeat(
             lambda report: ensure_yago_kb(),
@@ -1036,8 +1036,8 @@ def update_loader_from_file(file: Optional[gr.File]):
 
 def compute_memory_estimate() -> str:
     """Show GPU info, cached models, and cached KBs."""
-    from el_pipeline.lela.llm_pool import get_cached_models_info
-    from el_pipeline.knowledge_bases.custom import get_kb_cache_info
+    from lela.lela.llm_pool import get_cached_models_info
+    from lela.knowledge_bases.custom import get_kb_cache_info
 
     try:
         resources = get_system_resources()
@@ -1138,7 +1138,7 @@ def start_cancellation():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="EL Pipeline Gradio UI")
+    parser = argparse.ArgumentParser(description="LELA Gradio UI")
     parser.add_argument(
         "--log",
         type=str,
@@ -1310,7 +1310,7 @@ if __name__ == "__main__":
         }
 
         function setupPageCloseHandler() {
-            console.log("EL Pipeline: Page close handler initialized");
+            console.log("LELA: Page close handler initialized");
 
             function findCancelButton() {
                 const buttons = document.querySelectorAll('button');
@@ -1330,7 +1330,7 @@ if __name__ == "__main__":
                 const cancelBtn = findCancelButton();
                 if (cancelBtn) {
                     cancelBtn.click();
-                    console.log("EL Pipeline: Triggered cancellation on pagehide");
+                    console.log("LELA: Triggered cancellation on pagehide");
                 }
             }, { capture: true });
 
@@ -1338,7 +1338,7 @@ if __name__ == "__main__":
                 const cancelBtn = findCancelButton();
                 if (cancelBtn) {
                     cancelBtn.click();
-                    console.log("EL Pipeline: Triggered cancellation on beforeunload");
+                    console.log("LELA: Triggered cancellation on beforeunload");
                 }
             }, { capture: true });
         }
@@ -1392,7 +1392,7 @@ if __name__ == "__main__":
                     }
                 }
             });
-            console.log("EL Pipeline: Drag-and-drop initialized on text area");
+            console.log("LELA: Drag-and-drop initialized on text area");
         }
     })();
     </script>

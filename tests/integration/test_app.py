@@ -370,13 +370,16 @@ class TestRunPipeline:
             kb_type="custom",
             progress=mock_progress,
         )
-        html_output, stats, result, _ = self._exhaust_generator(gen)
+        html_output, stats, result, _, _, _ = self._exhaust_generator(gen)
+        # Final yield wraps html in gr.update() dict
+        if isinstance(html_output, dict):
+            html_output = html_output.get("value", "")
         assert isinstance(html_output, str)
         assert isinstance(stats, str)
         assert isinstance(result, dict)
 
     def test_run_pipeline_returns_tuple(self, mock_kb_file: MockGradioFile, mock_progress: MockGradioProgress):
-        """Pipeline generator yields 4-tuples of (html, stats, result, tab_switch)."""
+        """Pipeline generator yields 6-tuples of (html, stats, result, vis_change, btn_change, mode_change)."""
         text_input = "Test text."
         gen = run_pipeline(
             text_input=text_input,
@@ -415,7 +418,7 @@ class TestRunPipeline:
             progress=mock_progress,
         )
         output = self._exhaust_generator(gen)
-        assert len(output) == 4
+        assert len(output) == 6
 
     def test_run_pipeline_result_structure(self, mock_kb_file: MockGradioFile, mock_progress: MockGradioProgress):
         """Result has text and entities keys."""
@@ -456,7 +459,7 @@ class TestRunPipeline:
             kb_type="custom",
             progress=mock_progress,
         )
-        _, _, result, _ = self._exhaust_generator(gen)
+        _, _, result, _, _, _ = self._exhaust_generator(gen)
         assert "text" in result
         assert "entities" in result
 
@@ -464,7 +467,7 @@ class TestRunPipeline:
         """Without KB file, pipeline uses default YAGO KB."""
         from unittest.mock import patch
         # Mock the downloader to return the sample KB instead of downloading YAGO
-        with patch("el_pipeline.knowledge_bases.yago_downloader.ensure_yago_kb", return_value=mock_kb_file.name):
+        with patch("lela.knowledge_bases.yago_downloader.ensure_yago_kb", return_value=mock_kb_file.name):
             gen = run_pipeline(
                 text_input="Some text",
                 file_input=None,
@@ -501,7 +504,7 @@ class TestRunPipeline:
                 kb_type="custom",
                 progress=mock_progress,
             )
-            html_output, stats, result, _ = self._exhaust_generator(gen)
+            html_output, stats, result, _, _, _ = self._exhaust_generator(gen)
             assert isinstance(result, dict)
             assert "text" in result
 
@@ -543,7 +546,7 @@ class TestRunPipeline:
             kb_type="custom",
             progress=mock_progress,
         )
-        html_output, stats, result, _ = self._exhaust_generator(gen)
+        html_output, stats, result, _, _, _ = self._exhaust_generator(gen)
         assert "error" in result
         assert "Input" in result["error"]
 
@@ -586,7 +589,10 @@ class TestRunPipeline:
             kb_type="custom",
             progress=mock_progress,
         )
-        html_output, _, _, _ = self._exhaust_generator(gen)
+        html_output, _, _, _, _, _ = self._exhaust_generator(gen)
+        # Final yield wraps html in gr.update() dict
+        if isinstance(html_output, dict):
+            html_output = html_output.get("value", "")
         assert isinstance(html_output, str)
         # Should contain HTML markup
         assert "<" in html_output or html_output == ""

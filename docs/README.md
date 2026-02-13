@@ -1,4 +1,4 @@
-# EL Pipeline Documentation
+# LELA Documentation
 
 A modular Named Entity Recognition (NER) and Entity Linking pipeline built on **spaCy's component architecture**. This project provides a complete solution for extracting named entities from documents and linking them to entities in a knowledge base.
 
@@ -13,7 +13,7 @@ A modular Named Entity Recognition (NER) and Entity Linking pipeline built on **
 
 ## Overview
 
-The EL Pipeline leverages spaCy's native pipeline system to create a configurable entity linking solution. It features:
+LELA leverages spaCy's native pipeline system to create a configurable entity linking solution. It features:
 
 - **spaCy Integration**: All core components (NER, candidate generation, reranking, disambiguation) are implemented as spaCy pipeline components
 - **Modular Architecture**: Each pipeline stage is a pluggable spaCy component that can be swapped independently
@@ -60,21 +60,21 @@ The pipeline uses spaCy's component system where each stage is a registered fact
 ├───────────────────────────────────────────────────────────────┤
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │  NER Component (doc.ents populated)                     │  │
-│  │  Factories: el_pipeline_lela_gliner, _simple, _gliner, │  │
+│  │  Factories: lela_lela_gliner, _simple, _gliner, │  │
 │  │             or spaCy's built-in NER + _ner_filter       │  │
 │  └─────────────────────────────────────────────────────────┘  │
 │                              │                                │
 │                              ▼                                │
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │  Candidate Generator (ent._.candidates populated)       │  │
-│  │  Factories: el_pipeline_lela_dense_candidates,          │  │
+│  │  Factories: lela_lela_dense_candidates,          │  │
 │  │             _fuzzy_candidates, _bm25_candidates         │  │
 │  └─────────────────────────────────────────────────────────┘  │
 │                              │                                │
 │                              ▼                                │
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │  Reranker (ent._.candidates reordered)                  │  │
-│  │  Factories: el_pipeline_lela_embedder_transformers_reranker, │  │
+│  │  Factories: lela_lela_embedder_transformers_reranker, │  │
 │  │             _lela_embedder_vllm_reranker,                │  │
 │  │             _lela_cross_encoder_vllm_reranker,           │  │
 │  │             _cross_encoder_reranker, _noop_reranker     │  │
@@ -83,7 +83,7 @@ The pipeline uses spaCy's component system where each stage is a registered fact
 │                              ▼                                │
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │  Disambiguator (ent._.resolved_entity set)              │  │
-│  │  Factories: el_pipeline_lela_vllm_disambiguator,       │  │
+│  │  Factories: lela_lela_vllm_disambiguator,       │  │
 │  │             _lela_transformers_disambiguator,            │  │
 │  │             _first_disambiguator                        │  │
 │  └─────────────────────────────────────────────────────────┘  │
@@ -110,8 +110,8 @@ The pipeline uses spaCy's custom extension system on `Span` objects:
 ## Project Structure
 
 ```
-el-pipeline/
-├── el_pipeline/              # Main Python package
+lela/
+├── lela/              # Main Python package
 │   ├── __init__.py            # Package exports
 │   ├── types.py               # Data models (Document, Mention, Entity, etc.)
 │   ├── config.py              # PipelineConfig for configuration parsing
@@ -149,7 +149,7 @@ el-pipeline/
 **Requirements:** Python 3.10 (recommended), CUDA 12.x for GPU support
 
 ```bash
-cd el-pipeline
+cd lela
 
 # Create virtual environment with Python 3.10
 python3.10 -m venv .venv
@@ -167,7 +167,7 @@ python -m spacy download en_core_web_sm
 
 **Using the CLI:**
 ```bash
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config config/lela_bm25_only.json \
   --input document.txt \
   --output results.jsonl
@@ -175,8 +175,8 @@ python -m el_pipeline.cli \
 
 **Using the Python API:**
 ```python
-from el_pipeline.config import PipelineConfig
-from el_pipeline.pipeline import ELPipeline
+from lela.config import PipelineConfig
+from lela.pipeline import ELPipeline
 import json
 
 # Load configuration
@@ -191,16 +191,16 @@ results = pipeline.run(["document.txt"], output_path="results.jsonl")
 **Using spaCy directly (advanced):**
 ```python
 import spacy
-from el_pipeline import spacy_components  # Register factories
+from lela import spacy_components  # Register factories
 
 # Build custom pipeline
 nlp = spacy.blank("en")
-nlp.add_pipe("el_pipeline_simple", config={"min_len": 3})
-nlp.add_pipe("el_pipeline_fuzzy_candidates", config={"top_k": 10})
-nlp.add_pipe("el_pipeline_first_disambiguator")
+nlp.add_pipe("lela_simple", config={"min_len": 3})
+nlp.add_pipe("lela_fuzzy_candidates", config={"top_k": 10})
+nlp.add_pipe("lela_first_disambiguator")
 
 # Initialize components with KB
-from el_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
+from lela.knowledge_bases.custom import CustomJSONLKnowledgeBase
 kb = CustomJSONLKnowledgeBase(path="kb.jsonl")
 
 for name, component in nlp.pipeline:

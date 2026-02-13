@@ -1,5 +1,5 @@
 """
-EL Pipeline with spaCy integration.
+LELA with spaCy integration.
 
 This module provides the main ELPipeline class that orchestrates
 document processing using spaCy's pipeline architecture.
@@ -18,11 +18,11 @@ from spacy.language import Language
 from spacy.tokens import Doc
 
 # Import spacy_components to register factories
-from el_pipeline import spacy_components  # noqa: F401
+from lela import spacy_components  # noqa: F401
 
 # Keep loader and KB registration
-from el_pipeline import loaders as _loaders_pkg  # noqa: F401
-from el_pipeline import knowledge_bases as _kb_pkg  # noqa: F401
+from lela import loaders as _loaders_pkg  # noqa: F401
+from lela import knowledge_bases as _kb_pkg  # noqa: F401
 
 from .config import ComponentConfig, PipelineConfig
 from .registry import (
@@ -33,39 +33,39 @@ from .types import Candidate, Document, ProgressCallback
 
 # Component name mapping from config names to spaCy factory names
 NER_COMPONENT_MAP = {
-    "simple": "el_pipeline_simple",
-    "gliner": "el_pipeline_gliner",
+    "simple": "lela_simple",
+    "gliner": "lela_gliner",
     "spacy": None,  # Use built-in spaCy NER
 }
 
 CANDIDATES_COMPONENT_MAP = {
-    "lela_dense": "el_pipeline_lela_dense_candidates",
-    "fuzzy": "el_pipeline_fuzzy_candidates",
-    "bm25": "el_pipeline_bm25_candidates",
-    "lela_openai_api_dense": "el_pipeline_lela_openai_api_dense_candidates",
+    "lela_dense": "lela_lela_dense_candidates",
+    "fuzzy": "lela_fuzzy_candidates",
+    "bm25": "lela_bm25_candidates",
+    "lela_openai_api_dense": "lela_lela_openai_api_dense_candidates",
 }
 
 RERANKER_COMPONENT_MAP = {
-    "lela_embedder_transformers": "el_pipeline_lela_embedder_transformers_reranker",
-    "lela_embedder_vllm": "el_pipeline_lela_embedder_vllm_reranker",
-    "lela_cross_encoder": "el_pipeline_lela_cross_encoder_reranker",
-    "lela_cross_encoder_vllm": "el_pipeline_lela_cross_encoder_vllm_reranker",
-    "lela_vllm_api_client": "el_pipeline_lela_vllm_api_client_reranker",
-    "lela_llama_server": "el_pipeline_lela_llama_server_reranker",
-    "none": "el_pipeline_noop_reranker",
+    "lela_embedder_transformers": "lela_lela_embedder_transformers_reranker",
+    "lela_embedder_vllm": "lela_lela_embedder_vllm_reranker",
+    "lela_cross_encoder": "lela_lela_cross_encoder_reranker",
+    "lela_cross_encoder_vllm": "lela_lela_cross_encoder_vllm_reranker",
+    "lela_vllm_api_client": "lela_lela_vllm_api_client_reranker",
+    "lela_llama_server": "lela_lela_llama_server_reranker",
+    "none": "lela_noop_reranker",
 }
 
 DISAMBIGUATOR_COMPONENT_MAP = {
-    "lela_vllm": "el_pipeline_lela_vllm_disambiguator",
-    "lela_transformers": "el_pipeline_lela_transformers_disambiguator",
-    "lela_openai_api": "el_pipeline_lela_openai_api_disambiguator",
-    "first": "el_pipeline_first_disambiguator",
+    "lela_vllm": "lela_lela_vllm_disambiguator",
+    "lela_transformers": "lela_lela_transformers_disambiguator",
+    "lela_openai_api": "lela_lela_openai_api_disambiguator",
+    "first": "lela_first_disambiguator",
 }
 
 
 class ELPipeline:
     """
-    Orchestrates the modular EL pipeline using spaCy.
+    Orchestrates the modular LELA using spaCy.
 
     The pipeline uses spaCy's component system for NER, candidate generation,
     reranking, and disambiguation, while keeping document loaders and
@@ -95,7 +95,7 @@ class ELPipeline:
         check_cancelled()
 
         if config.knowledge_base is None:
-            from el_pipeline.knowledge_bases.yago_downloader import ensure_yago_kb
+            from lela.knowledge_bases.yago_downloader import ensure_yago_kb
 
             path = ensure_yago_kb()
             config.knowledge_base = ComponentConfig(
@@ -167,11 +167,11 @@ class ELPipeline:
             # Add a filter to set context on existing entities after NER runs.
             # We add it 'after' the 'ner' component to ensure entities are present.
             if "ner" in nlp.pipe_names:
-                nlp.add_pipe("el_pipeline_ner_filter", after="ner")
+                nlp.add_pipe("lela_ner_filter", after="ner")
             else:
                 # If the loaded model has no NER, we still add the filter
                 # in case another component adds entities.
-                nlp.add_pipe("el_pipeline_ner_filter")
+                nlp.add_pipe("lela_ner_filter")
         else:
             # For custom NER components, start with a blank model
             nlp = spacy.blank("en")
@@ -220,7 +220,7 @@ class ELPipeline:
         else:
             # Always add the noop reranker to enforce top_k truncation
             rerank_params = dict(config.reranker.params) if config.reranker else {}
-            nlp.add_pipe("el_pipeline_noop_reranker", config=rerank_params)
+            nlp.add_pipe("lela_noop_reranker", config=rerank_params)
 
         check_cancelled()
         # Add disambiguator component (optional)
@@ -435,56 +435,56 @@ class ELPipeline:
     def _get_stage_description(self, component_name: str) -> str:
         """Get human-readable description for a component name."""
         descriptions = {
-            "el_pipeline_simple": "NER (regex)",
-            "el_pipeline_gliner": "NER (GLiNER)",
-            "el_pipeline_ner_filter": "NER context extraction",
+            "lela_simple": "NER (regex)",
+            "lela_gliner": "NER (GLiNER)",
+            "lela_ner_filter": "NER context extraction",
             "ner": "NER (spaCy)",
-            "el_pipeline_lela_dense_candidates": "Candidate generation (dense)",
-            "el_pipeline_lela_openai_api_dense_candidates": "Candidate generation (OpenAI API)",
-            "el_pipeline_fuzzy_candidates": "Candidate generation (fuzzy)",
-            "el_pipeline_bm25_candidates": "Candidate generation (BM25)",
-            "el_pipeline_lela_embedder_transformers_reranker": "Reranking (embedder)",
-            "el_pipeline_lela_embedder_vllm_reranker": "Reranking (embedder vLLM)",
-            "el_pipeline_lela_cross_encoder_reranker": "Reranking (cross-encoder)",
-            "el_pipeline_lela_cross_encoder_vllm_reranker": "Reranking (cross-encoder vLLM)",
-            "el_pipeline_lela_vllm_api_client_reranker": "Reranking (vLLM API)",
-            "el_pipeline_lela_llama_server_reranker": "Reranking (Llama Server)",
-            "el_pipeline_noop_reranker": "Reranking (pass-through)",
-            "el_pipeline_lela_vllm_disambiguator": "Disambiguation (LLM)",
-            "el_pipeline_lela_transformers_disambiguator": "Disambiguation (LLM)",
-            "el_pipeline_lela_openai_api_disambiguator": "Disambiguation (LLM)",
-            "el_pipeline_first_disambiguator": "Disambiguation",
-            "el_pipeline_popularity_disambiguator": "Disambiguation",
+            "lela_lela_dense_candidates": "Candidate generation (dense)",
+            "lela_lela_openai_api_dense_candidates": "Candidate generation (OpenAI API)",
+            "lela_fuzzy_candidates": "Candidate generation (fuzzy)",
+            "lela_bm25_candidates": "Candidate generation (BM25)",
+            "lela_lela_embedder_transformers_reranker": "Reranking (embedder)",
+            "lela_lela_embedder_vllm_reranker": "Reranking (embedder vLLM)",
+            "lela_lela_cross_encoder_reranker": "Reranking (cross-encoder)",
+            "lela_lela_cross_encoder_vllm_reranker": "Reranking (cross-encoder vLLM)",
+            "lela_lela_vllm_api_client_reranker": "Reranking (vLLM API)",
+            "lela_lela_llama_server_reranker": "Reranking (Llama Server)",
+            "lela_noop_reranker": "Reranking (pass-through)",
+            "lela_lela_vllm_disambiguator": "Disambiguation (LLM)",
+            "lela_lela_transformers_disambiguator": "Disambiguation (LLM)",
+            "lela_lela_openai_api_disambiguator": "Disambiguation (LLM)",
+            "lela_first_disambiguator": "Disambiguation",
+            "lela_popularity_disambiguator": "Disambiguation",
         }
         return descriptions.get(component_name, component_name)
 
     def _is_ner_component(self, component_name: str) -> bool:
         """Check if component is a NER component."""
         return component_name in (
-            "el_pipeline_simple",
-            "el_pipeline_gliner",
+            "lela_simple",
+            "lela_gliner",
             "ner",
-            "el_pipeline_ner_filter",
+            "lela_ner_filter",
         )
 
     def _is_entity_processing_component(self, component_name: str) -> bool:
         """Check if component processes entities (candidates, reranking, disambiguation)."""
         return component_name in (
-            "el_pipeline_lela_dense_candidates",
-            "el_pipeline_lela_openai_api_dense_candidates",
-            "el_pipeline_fuzzy_candidates",
-            "el_pipeline_bm25_candidates",
-            "el_pipeline_lela_embedder_transformers_reranker",
-            "el_pipeline_lela_embedder_vllm_reranker",
-            "el_pipeline_lela_cross_encoder_reranker",
-            "el_pipeline_lela_cross_encoder_vllm_reranker",
-            "el_pipeline_lela_vllm_api_client_reranker",
-            "el_pipeline_lela_llama_server_reranker",
-            "el_pipeline_lela_vllm_disambiguator",
-            "el_pipeline_lela_transformers_disambiguator",
-            "el_pipeline_lela_openai_api_disambiguator",
-            "el_pipeline_first_disambiguator",
-            "el_pipeline_popularity_disambiguator",
+            "lela_lela_dense_candidates",
+            "lela_lela_openai_api_dense_candidates",
+            "lela_fuzzy_candidates",
+            "lela_bm25_candidates",
+            "lela_lela_embedder_transformers_reranker",
+            "lela_lela_embedder_vllm_reranker",
+            "lela_lela_cross_encoder_reranker",
+            "lela_lela_cross_encoder_vllm_reranker",
+            "lela_lela_vllm_api_client_reranker",
+            "lela_lela_llama_server_reranker",
+            "lela_lela_vllm_disambiguator",
+            "lela_lela_transformers_disambiguator",
+            "lela_lela_openai_api_disambiguator",
+            "lela_first_disambiguator",
+            "lela_popularity_disambiguator",
         )
 
     def run(

@@ -3,8 +3,8 @@ from typing import Iterator
 
 import docx
 
-from el_pipeline.registry import loaders
-from el_pipeline.types import Document
+from lela.registry import loaders
+from lela.types import Document
 
 
 @loaders.register("docx")

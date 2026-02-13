@@ -1,5 +1,5 @@
 """
-spaCy components for EL pipeline.
+spaCy components for LELA.
 
 This module provides spaCy-compatible pipeline components for:
 - NER (named entity recognition)

@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 import spacy
 
-from el_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
-from el_pipeline.types import Entity
+from lela.knowledge_bases.custom import CustomJSONLKnowledgeBase
+from lela.types import Entity
 
 
 class TestLELADenseCache:
@@ -48,9 +48,9 @@ class TestLELADenseCache:
     def nlp(self):
         return spacy.blank("en")
 
-    @patch("el_pipeline.spacy_components.candidates._get_faiss")
-    @patch("el_pipeline.spacy_components.candidates.release_sentence_transformer")
-    @patch("el_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    @patch("lela.spacy_components.candidates._get_faiss")
+    @patch("lela.spacy_components.candidates.release_sentence_transformer")
+    @patch("lela.spacy_components.candidates.get_sentence_transformer_instance")
     def test_initialize_saves_cache(
         self, mock_get_st, mock_release_st, mock_faiss, kb, cache_dir, nlp
     ):
@@ -70,7 +70,7 @@ class TestLELADenseCache:
         ])
         mock_get_st.return_value = (mock_model, False)
 
-        from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
+        from lela.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
         component.initialize(kb, cache_dir=Path(cache_dir))
 
@@ -81,9 +81,9 @@ class TestLELADenseCache:
         assert "lela_dense_" in write_args[1]
         assert write_args[1].endswith("index.faiss")
 
-    @patch("el_pipeline.spacy_components.candidates._get_faiss")
-    @patch("el_pipeline.spacy_components.candidates.release_sentence_transformer")
-    @patch("el_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    @patch("lela.spacy_components.candidates._get_faiss")
+    @patch("lela.spacy_components.candidates.release_sentence_transformer")
+    @patch("lela.spacy_components.candidates.get_sentence_transformer_instance")
     def test_initialize_loads_from_cache(
         self, mock_get_st, mock_release_st, mock_faiss, kb, cache_dir, nlp
     ):
@@ -103,7 +103,7 @@ class TestLELADenseCache:
         ])
         mock_get_st.return_value = (mock_model, False)
 
-        from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
+        from lela.spacy_components.candidates import LELADenseCandidatesComponent
 
         # First call: builds and saves
         component1 = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
@@ -137,9 +137,9 @@ class TestLELADenseCache:
         # The cached index should be assigned
         assert component2.index is mock_cached_index
 
-    @patch("el_pipeline.spacy_components.candidates._get_faiss")
-    @patch("el_pipeline.spacy_components.candidates.release_sentence_transformer")
-    @patch("el_pipeline.spacy_components.candidates.get_sentence_transformer_instance")
+    @patch("lela.spacy_components.candidates._get_faiss")
+    @patch("lela.spacy_components.candidates.release_sentence_transformer")
+    @patch("lela.spacy_components.candidates.get_sentence_transformer_instance")
     def test_no_cache_dir_skips_caching(
         self, mock_get_st, mock_release_st, mock_faiss, kb, nlp
     ):
@@ -155,7 +155,7 @@ class TestLELADenseCache:
         mock_model.encode.return_value = np.array([[0.1, 0.2, 0.3]] * 3)
         mock_get_st.return_value = (mock_model, False)
 
-        from el_pipeline.spacy_components.candidates import LELADenseCandidatesComponent
+        from lela.spacy_components.candidates import LELADenseCandidatesComponent
         component = LELADenseCandidatesComponent(nlp=nlp, top_k=5, use_context=False)
         component.initialize(kb)
 
@@ -202,7 +202,7 @@ class TestBM25Cache:
 
     def test_initialize_saves_cache(self, kb, cache_dir, nlp):
         """First initialize with cache_dir creates a pickle file."""
-        from el_pipeline.spacy_components.candidates import BM25CandidatesComponent
+        from lela.spacy_components.candidates import BM25CandidatesComponent
         component = BM25CandidatesComponent(nlp=nlp, top_k=5)
         component.initialize(kb, cache_dir=Path(cache_dir))
 
@@ -220,7 +220,7 @@ class TestBM25Cache:
 
     def test_initialize_loads_from_cache(self, kb, cache_dir, nlp):
         """Second initialize loads from pickle cache."""
-        from el_pipeline.spacy_components.candidates import BM25CandidatesComponent
+        from lela.spacy_components.candidates import BM25CandidatesComponent
 
         # First call: builds and saves
         component1 = BM25CandidatesComponent(nlp=nlp, top_k=5)
@@ -239,7 +239,7 @@ class TestBM25Cache:
 
     def test_no_cache_dir_works(self, kb, nlp):
         """Without cache_dir, initialization works normally."""
-        from el_pipeline.spacy_components.candidates import BM25CandidatesComponent
+        from lela.spacy_components.candidates import BM25CandidatesComponent
         component = BM25CandidatesComponent(nlp=nlp, top_k=5)
         component.initialize(kb)
         assert component.bm25 is not None
@@ -247,7 +247,7 @@ class TestBM25Cache:
 
     def test_corrupt_cache_falls_back_to_build(self, kb, cache_dir, nlp):
         """Corrupt cache file triggers rebuild."""
-        from el_pipeline.spacy_components.candidates import BM25CandidatesComponent
+        from lela.spacy_components.candidates import BM25CandidatesComponent
 
         # First call to create cache
         component1 = BM25CandidatesComponent(nlp=nlp, top_k=5)
@@ -297,7 +297,7 @@ class TestFuzzyCache:
     def test_initialize_accepts_cache_dir(self, kb, nlp):
         """FuzzyCandidatesComponent.initialize accepts cache_dir without error."""
         with tempfile.TemporaryDirectory() as cache_dir:
-            from el_pipeline.spacy_components.candidates import FuzzyCandidatesComponent
+            from lela.spacy_components.candidates import FuzzyCandidatesComponent
             component = FuzzyCandidatesComponent(nlp=nlp, top_k=5)
             component.initialize(kb, cache_dir=Path(cache_dir))
             assert component.entities is not None
@@ -305,7 +305,7 @@ class TestFuzzyCache:
 
     def test_initialize_without_cache_dir(self, kb, nlp):
         """FuzzyCandidatesComponent.initialize works without cache_dir."""
-        from el_pipeline.spacy_components.candidates import FuzzyCandidatesComponent
+        from lela.spacy_components.candidates import FuzzyCandidatesComponent
         component = FuzzyCandidatesComponent(nlp=nlp, top_k=5)
         component.initialize(kb)
         assert component.entities is not None
@@ -332,7 +332,7 @@ class TestCacheInvalidation:
 
     def test_bm25_cache_invalidated_on_kb_change(self, cache_dir, nlp):
         """BM25 cache is invalidated when the KB file changes."""
-        from el_pipeline.spacy_components.candidates import BM25CandidatesComponent
+        from lela.spacy_components.candidates import BM25CandidatesComponent
 
         data_v1 = [
             {"title": "Barack Obama", "description": "44th US President"},

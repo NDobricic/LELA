@@ -1,6 +1,6 @@
 # Command-Line Interface (CLI) Documentation
 
-The EL Pipeline provides a command-line interface for processing documents. Under the hood, the CLI uses spaCy's pipeline architecture for all NER and entity linking operations.
+LELA provides a command-line interface for processing documents. Under the hood, the CLI uses spaCy's pipeline architecture for all NER and entity linking operations.
 
 ## Table of Contents
 
@@ -15,7 +15,7 @@ The EL Pipeline provides a command-line interface for processing documents. Unde
 
 ```bash
 # Basic usage
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config config.json \
   --input document.txt \
   --output results.jsonl
@@ -24,7 +24,7 @@ python -m el_pipeline.cli \
 ## Command Syntax
 
 ```bash
-python -m el_pipeline.cli --config <config_file> --input <input_files...> [--output <output_file>]
+python -m lela.cli --config <config_file> --input <input_files...> [--output <output_file>]
 ```
 
 Or using the wrapper script:
@@ -92,26 +92,26 @@ The configuration names map to spaCy component factories:
 | Config Name | spaCy Factory | Description |
 |-------------|---------------|-------------|
 | **NER** | | |
-| `simple` | `el_pipeline_simple` | Regex-based NER |
+| `simple` | `lela_simple` | Regex-based NER |
 | `spacy` | Built-in + filter | spaCy's pretrained NER |
-| `gliner` | `el_pipeline_gliner` | GLiNER zero-shot |
+| `gliner` | `lela_gliner` | GLiNER zero-shot |
 | **Candidate Generators** | | |
-| `fuzzy` | `el_pipeline_fuzzy_candidates` | RapidFuzz matching |
-| `bm25` | `el_pipeline_bm25_candidates` | rank-bm25 retrieval |
-| `lela_dense` | `el_pipeline_lela_dense_candidates` | Dense retrieval |
+| `fuzzy` | `lela_fuzzy_candidates` | RapidFuzz matching |
+| `bm25` | `lela_bm25_candidates` | rank-bm25 retrieval |
+| `lela_dense` | `lela_lela_dense_candidates` | Dense retrieval |
 | **Rerankers** | | |
-| `none` | `el_pipeline_noop_reranker` | No reranking |
-| `cross_encoder` | `el_pipeline_lela_cross_encoder_reranker` | Cross-encoder |
-| `lela_embedder_transformers` | `el_pipeline_lela_embedder_transformers_reranker` | Bi-encoder (SentenceTransformers) |
-| `lela_embedder_vllm` | `el_pipeline_lela_embedder_vllm_reranker` | Bi-encoder (vLLM embed) |
-| `lela_cross_encoder_vllm` | `el_pipeline_lela_cross_encoder_vllm_reranker` | Cross-encoder (vLLM score) |
-| `lela_vllm_api_client` | `el_pipeline_lela_vllm_api_client_reranker` | vLLM API client reranker |
-| `lela_llama_server` | `el_pipeline_lela_llama_server_reranker` | Llama server reranker |
+| `none` | `lela_noop_reranker` | No reranking |
+| `cross_encoder` | `lela_lela_cross_encoder_reranker` | Cross-encoder |
+| `lela_embedder_transformers` | `lela_lela_embedder_transformers_reranker` | Bi-encoder (SentenceTransformers) |
+| `lela_embedder_vllm` | `lela_lela_embedder_vllm_reranker` | Bi-encoder (vLLM embed) |
+| `lela_cross_encoder_vllm` | `lela_lela_cross_encoder_vllm_reranker` | Cross-encoder (vLLM score) |
+| `lela_vllm_api_client` | `lela_lela_vllm_api_client_reranker` | vLLM API client reranker |
+| `lela_llama_server` | `lela_lela_llama_server_reranker` | Llama server reranker |
 | **Disambiguators** | | |
-| `first` | `el_pipeline_first_disambiguator` | Select first |
-| `lela_vllm` | `el_pipeline_lela_vllm_disambiguator` | vLLM disambiguation |
-| `lela_transformers` | `el_pipeline_lela_transformers_disambiguator` | Transformers LLM disambiguation |
-| `lela_openai_api` | `el_pipeline_lela_openai_api_disambiguator` | OpenAI API disambiguation |
+| `first` | `lela_first_disambiguator` | Select first |
+| `lela_vllm` | `lela_lela_vllm_disambiguator` | vLLM disambiguation |
+| `lela_transformers` | `lela_lela_transformers_disambiguator` | Transformers LLM disambiguation |
+| `lela_openai_api` | `lela_lela_openai_api_disambiguator` | OpenAI API disambiguation |
 
 ### Example Configurations
 
@@ -219,7 +219,7 @@ The configuration names map to spaCy component factories:
 ### Process a Single Text File
 
 ```bash
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config config/minimal.json \
   --input document.txt \
   --output results.jsonl
@@ -228,7 +228,7 @@ python -m el_pipeline.cli \
 ### Process Multiple Files
 
 ```bash
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config config/lela_example.json \
   --input doc1.txt doc2.txt doc3.txt \
   --output all_results.jsonl
@@ -238,19 +238,19 @@ python -m el_pipeline.cli \
 
 ```bash
 # PDF file
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config config.json \
   --input report.pdf \
   --output report_entities.jsonl
 
 # Word document
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config config.json \
   --input document.docx \
   --output doc_entities.jsonl
 
 # HTML file
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config config.json \
   --input webpage.html \
   --output page_entities.jsonl
@@ -259,7 +259,7 @@ python -m el_pipeline.cli \
 ### Process Without Output File (Print to stdout)
 
 ```bash
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config config.json \
   --input document.txt
 ```
@@ -268,7 +268,7 @@ python -m el_pipeline.cli \
 
 ```bash
 # Using provided test data
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config data/test/config_simple_fuzzy.json \
   --input data/test/sample_doc.txt \
   --output results.jsonl
@@ -278,7 +278,7 @@ python -m el_pipeline.cli \
 
 ```bash
 # Process all .txt files in a directory (using shell expansion)
-python -m el_pipeline.cli \
+python -m lela.cli \
   --config config.json \
   --input documents/*.txt \
   --output batch_results.jsonl

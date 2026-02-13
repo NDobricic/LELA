@@ -17,7 +17,7 @@ import logging
 import os
 from typing import Callable, Dict, Set, Optional, Any, Tuple
 
-from el_pipeline.lela.config import VLLM_GPU_MEMORY_UTILIZATION
+from lela.lela.config import VLLM_GPU_MEMORY_UTILIZATION
 
 # Configure multiprocessing to work from worker threads
 os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")

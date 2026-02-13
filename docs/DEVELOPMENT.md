@@ -1,6 +1,6 @@
 # Development Guide
 
-This guide explains how to extend the EL Pipeline by creating custom loaders, knowledge bases, and spaCy components.
+This guide explains how to extend LELA by creating custom loaders, knowledge bases, and spaCy components.
 
 ## Table of Contents
 
@@ -15,7 +15,7 @@ This guide explains how to extend the EL Pipeline by creating custom loaders, kn
 
 ## Architecture Overview
 
-The EL Pipeline uses two extension mechanisms:
+LELA uses two extension mechanisms:
 
 1. **Registry-based** (loaders, knowledge bases): Simple decorator registration
 2. **spaCy factories** (NER, candidates, rerankers, disambiguators): spaCy's `@Language.factory` decorator
@@ -46,7 +46,7 @@ Loaders parse input files and yield `Document` objects.
 
 ```python
 from typing import Iterator
-from el_pipeline.types import Document
+from lela.types import Document
 
 class LoaderProtocol:
     def load(self, path: str) -> Iterator[Document]:
@@ -61,8 +61,8 @@ import csv
 from pathlib import Path
 from typing import Iterator
 
-from el_pipeline.registry import loaders
-from el_pipeline.types import Document
+from lela.registry import loaders
+from lela.types import Document
 
 
 @loaders.register("csv")
@@ -109,7 +109,7 @@ class CSVLoader:
 
 **In Python:**
 ```python
-from el_pipeline.registry import loaders
+from lela.registry import loaders
 
 # Import to register
 from your_module import CSVLoader
@@ -124,12 +124,12 @@ for doc in loader.load("data.csv"):
 
 | Name | Class | Location |
 |------|-------|----------|
-| `text` | `TextLoader` | `el_pipeline/loaders/text.py` |
-| `json` | `JSONLoader` | `el_pipeline/loaders/text.py` |
-| `jsonl` | `JSONLLoader` | `el_pipeline/loaders/text.py` |
-| `pdf` | `PDFLoader` | `el_pipeline/loaders/pdf.py` |
-| `docx` | `DocxLoader` | `el_pipeline/loaders/docx.py` |
-| `html` | `HTMLLoader` | `el_pipeline/loaders/html.py` |
+| `text` | `TextLoader` | `lela/loaders/text.py` |
+| `json` | `JSONLoader` | `lela/loaders/text.py` |
+| `jsonl` | `JSONLLoader` | `lela/loaders/text.py` |
+| `pdf` | `PDFLoader` | `lela/loaders/pdf.py` |
+| `docx` | `DocxLoader` | `lela/loaders/docx.py` |
+| `html` | `HTMLLoader` | `lela/loaders/html.py` |
 
 ---
 
@@ -141,7 +141,7 @@ Knowledge bases provide entity lookup and search functionality.
 
 ```python
 from typing import Dict, Iterable, List, Optional
-from el_pipeline.types import Entity
+from lela.types import Entity
 
 class KnowledgeBaseProtocol:
     def get_entity(self, entity_id: str) -> Optional[Entity]:
@@ -164,8 +164,8 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from el_pipeline.registry import knowledge_bases
-from el_pipeline.types import Entity
+from lela.registry import knowledge_bases
+from lela.types import Entity
 
 
 @knowledge_bases.register("sqlite")
@@ -250,7 +250,7 @@ class SQLiteKnowledgeBase:
 
 | Name | Class | Location |
 |------|-------|----------|
-| `custom` | `CustomJSONLKnowledgeBase` | `el_pipeline/knowledge_bases/custom.py` |
+| `custom` | `CustomJSONLKnowledgeBase` | `lela/knowledge_bases/custom.py` |
 
 **Note:** `CustomJSONLKnowledgeBase` supports persistent caching via the `cache_dir` parameter. When provided, parsed KB data is cached to disk and reused on subsequent loads, significantly reducing initialization time for large knowledge bases.
 
@@ -278,12 +278,12 @@ from typing import List, Optional
 from spacy.language import Language
 from spacy.tokens import Doc, Span
 
-from el_pipeline.context import extract_context
-from el_pipeline.utils import filter_spans, ensure_context_extension
+from lela.context import extract_context
+from lela.utils import filter_spans, ensure_context_extension
 
 
 @Language.factory(
-    "el_pipeline_email_ner",
+    "lela_email_ner",
     default_config={
         "context_mode": "sentence",
     },
@@ -350,12 +350,12 @@ from typing import List, Tuple, Optional
 from spacy.language import Language
 from spacy.tokens import Doc, Span
 
-from el_pipeline.knowledge_bases.base import KnowledgeBase
-from el_pipeline.utils import ensure_candidates_extension
+from lela.knowledge_bases.base import KnowledgeBase
+from lela.utils import ensure_candidates_extension
 
 
 @Language.factory(
-    "el_pipeline_exact_candidates",
+    "lela_exact_candidates",
     default_config={
         "top_k": 10,
     },
@@ -432,12 +432,12 @@ from typing import Optional
 from spacy.language import Language
 from spacy.tokens import Doc, Span
 
-from el_pipeline.knowledge_bases.base import KnowledgeBase
-from el_pipeline.utils import ensure_candidates_extension, ensure_resolved_entity_extension
+from lela.knowledge_bases.base import KnowledgeBase
+from lela.utils import ensure_candidates_extension, ensure_resolved_entity_extension
 
 
 @Language.factory(
-    "el_pipeline_random_disambiguator",
+    "lela_random_disambiguator",
     default_config={},
 )
 def create_random_disambiguator_component(nlp: Language, name: str):
@@ -500,7 +500,7 @@ import spacy
 import your_custom_components  # This registers the factories
 
 nlp = spacy.blank("en")
-nlp.add_pipe("el_pipeline_email_ner")  # Now available
+nlp.add_pipe("lela_email_ner")  # Now available
 ```
 
 ---
@@ -543,7 +543,7 @@ All component types can be combined freely. Here are some recommended combinatio
 ### How Registries Work
 
 ```python
-# In el_pipeline/registry.py
+# In lela/registry.py
 class Registry:
     def __init__(self, name: str):
         self.name = name
@@ -565,7 +565,7 @@ knowledge_bases = Registry("knowledge_bases")
 ### Using the Registry
 
 ```python
-from el_pipeline.registry import loaders, knowledge_bases
+from lela.registry import loaders, knowledge_bases
 
 # Register
 @loaders.register("my_loader")
@@ -582,19 +582,19 @@ loader = LoaderClass(**params)
 The `ELPipeline` maps config names to spaCy factory names:
 
 ```python
-# In el_pipeline/pipeline.py
+# In lela/pipeline.py
 NER_COMPONENT_MAP = {
-    "simple": "el_pipeline_simple",
-    "gliner": "el_pipeline_gliner",
+    "simple": "lela_simple",
+    "gliner": "lela_gliner",
     # ...
 }
 ```
 
 To add a new component to the pipeline config:
 
-1. Create the spaCy factory with `@Language.factory("el_pipeline_my_component")`
+1. Create the spaCy factory with `@Language.factory("lela_my_component")`
 2. Add to the appropriate map in `pipeline.py`
-3. Import your module in `el_pipeline/spacy_components/__init__.py`
+3. Import your module in `lela/spacy_components/__init__.py`
 
 ---
 
@@ -615,10 +615,10 @@ def _get_model():
 
 ### 2. Use Shared Utilities for Extensions
 
-Use the shared utility functions in `el_pipeline.utils` to register extensions:
+Use the shared utility functions in `lela.utils` to register extensions:
 
 ```python
-from el_pipeline.utils import (
+from lela.utils import (
     filter_spans,                    # For NER components
     ensure_context_extension,        # For NER: ent._.context
     ensure_candidates_extension,     # For candidates: ent._.candidates, ent._.candidate_scores

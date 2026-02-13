@@ -6,8 +6,8 @@ import tempfile
 
 import pytest
 
-from el_pipeline.knowledge_bases.custom import CustomJSONLKnowledgeBase
-from el_pipeline.types import Entity
+from lela.knowledge_bases.custom import CustomJSONLKnowledgeBase
+from lela.types import Entity
 
 
 class TestCustomJSONLKnowledgeBase:
