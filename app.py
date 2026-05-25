@@ -706,7 +706,7 @@ def run_pipeline(
     disambig_params = {}
     if disambig_type in ("vllm", "transformers"):
         disambig_params["model_name"] = llm_model
-        disambig_params["disable_thinking"] = not thinking
+        disambig_params["enable_thinking"] = thinking
         disambig_params["add_none_candidate"] = none_candidate
     if disambig_type == "vllm":
         disambig_params["gpu_memory_gb"] = disambig_gpu_mem_gb
@@ -1805,7 +1805,7 @@ if __name__ == "__main__":
             disambig_params = {}
             if disambig_t in ("vllm", "transformers"):
                 disambig_params["model_name"] = llm_m
-                disambig_params["disable_thinking"] = not thinking
+                disambig_params["enable_thinking"] = thinking
                 disambig_params["add_none_candidate"] = none_cand
             if disambig_t == "vllm":
                 disambig_params["gpu_memory_gb"] = disambig_gpu

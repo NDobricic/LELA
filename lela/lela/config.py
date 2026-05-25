@@ -19,6 +19,8 @@ AVAILABLE_LLM_MODELS = [
     ("Qwen/Qwen3-4B", "Qwen3-4B", 9.5),
     ("Qwen/Qwen3-8B", "Qwen3-8B", 18.5),
     ("Qwen/Qwen3-14B", "Qwen3-14B", 32.5),
+    ("google/gemma-4-E2B-it", "Gemma-4-E2B-it", 5.0),
+    ("google/gemma-4-E4B-it", "Gemma-4-E4B-it", 9.5),
 ]
 
 # Available embedding models (model_id, display_name, vram_gb)

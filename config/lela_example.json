@@ -33,7 +33,7 @@
       "tensor_parallel_size": 1,
       "add_none_candidate": true,
       "add_descriptions": true,
-      "disable_thinking": true
+      "enable_thinking": false
     }
   },
   "knowledge_base": {

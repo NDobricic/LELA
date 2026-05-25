@@ -292,29 +292,34 @@ class TestLELAvLLMDisambiguatorComponent:
 
 
 class TestLELAvLLMDisambiguatorParsing:
-    """Tests for output parsing logic."""
+    """Tests for the shared _parse_answer helper used by all LLM disambiguators."""
 
     def test_parse_output_standard_format(self):
-        from lela.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
-        assert LELAvLLMDisambiguatorComponent._parse_output('"answer": 1') == 1
-        assert LELAvLLMDisambiguatorComponent._parse_output('"answer": 2') == 2
-        assert LELAvLLMDisambiguatorComponent._parse_output('"answer": 0') == 0
+        from lela.spacy_components.disambiguators import _parse_answer
+        assert _parse_answer('"answer": 1') == 1
+        assert _parse_answer('"answer": 2') == 2
+        assert _parse_answer('"answer": 0') == 0
 
     def test_parse_output_without_quotes(self):
-        from lela.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
-        assert LELAvLLMDisambiguatorComponent._parse_output('answer: 1') == 1
-        assert LELAvLLMDisambiguatorComponent._parse_output('answer: 3') == 3
+        from lela.spacy_components.disambiguators import _parse_answer
+        assert _parse_answer('answer: 1') == 1
+        assert _parse_answer('answer: 3') == 3
 
     def test_parse_output_with_surrounding_text(self):
-        from lela.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
-        assert LELAvLLMDisambiguatorComponent._parse_output('Based on context, "answer": 2') == 2
-        assert LELAvLLMDisambiguatorComponent._parse_output('{"answer": 1}') == 1
+        from lela.spacy_components.disambiguators import _parse_answer
+        assert _parse_answer('Based on context, "answer": 2') == 2
+        assert _parse_answer('{"answer": 1}') == 1
 
     def test_parse_output_invalid_returns_zero(self):
-        from lela.spacy_components.disambiguators import LELAvLLMDisambiguatorComponent
-        assert LELAvLLMDisambiguatorComponent._parse_output('no answer here') == 0
-        assert LELAvLLMDisambiguatorComponent._parse_output('') == 0
-        assert LELAvLLMDisambiguatorComponent._parse_output('Barack Obama') == 0
+        from lela.spacy_components.disambiguators import _parse_answer
+        assert _parse_answer('no answer here') == 0
+        assert _parse_answer('') == 0
+        assert _parse_answer('Barack Obama') == 0
+
+    def test_parse_output_last_line_fallback(self):
+        from lela.spacy_components.disambiguators import _parse_answer
+        # No "answer:" marker; pick the last number on the last non-empty line.
+        assert _parse_answer("I'll pick option 3.\nThe choice is 4") == 4
 
 
 class TestLELAvLLMDisambiguatorConfig:
