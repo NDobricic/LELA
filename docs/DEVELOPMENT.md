@@ -513,7 +513,7 @@ All component types can be combined freely. Here are some recommended combinatio
 
 | Stage | Component | Notes |
 |-------|-----------|-------|
-| NER | `simple` | Regex-based, no downloads |
+| NER | `regex` | Regex-based, no downloads |
 | Candidates | `fuzzy` | RapidFuzz string matching |
 | Reranker | `none` | Skip reranking |
 | Disambiguator | `first` | Select first candidate |
@@ -584,7 +584,7 @@ loader = LoaderClass(**params)
 ```python
 # In lela/pipeline.py
 NER_COMPONENT_MAP = {
-    "simple": "simple_ner",
+    "regex": "simple_ner",
     "gliner": "gliner_ner",
     # ...
 }

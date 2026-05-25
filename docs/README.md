@@ -218,7 +218,7 @@ python app.py --port 7860
 ```json
 {
   "loader": {"name": "text"},
-  "ner": {"name": "simple", "params": {"min_len": 3}},
+  "ner": {"name": "regex", "params": {"min_len": 3}},
   "candidate_generator": {"name": "fuzzy", "params": {"top_k": 10}},
   "reranker": {"name": "none"},
   "disambiguator": {"name": "first"},

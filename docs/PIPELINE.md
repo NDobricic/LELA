@@ -102,7 +102,7 @@ doc = nlp("Albert Einstein visited Paris.")
 
 | Config Name | spaCy Factory Name |
 |-------------|-------------------|
-| `simple` | `simple_ner` |
+| `regex` | `simple_ner` |
 | `gliner` | `gliner_ner` |
 | `dense` | `dense_candidates` |
 | `fuzzy` | `fuzzy_candidates` |

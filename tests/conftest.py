@@ -229,7 +229,7 @@ def minimal_config_dict(temp_jsonl_kb: str, temp_cache_dir: str) -> Dict:
             "params": {},
         },
         "ner": {
-            "name": "simple",
+            "name": "regex",
             "params": {"min_len": 3},
         },
         "candidate_generator": {

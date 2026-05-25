@@ -9,8 +9,8 @@ class TestComponentConfig:
     """Tests for ComponentConfig dataclass."""
 
     def test_create_with_name_only(self):
-        config = ComponentConfig(name="simple")
-        assert config.name == "simple"
+        config = ComponentConfig(name="regex")
+        assert config.name == "regex"
         assert config.params == {}
 
     def test_create_with_params(self):
@@ -25,12 +25,12 @@ class TestPipelineConfig:
     def test_from_dict_minimal(self):
         data = {
             "loader": {"name": "text", "params": {}},
-            "ner": {"name": "simple", "params": {}},
+            "ner": {"name": "regex", "params": {}},
             "candidate_generator": {"name": "fuzzy", "params": {}},
         }
         config = PipelineConfig.from_dict(data)
         assert config.loader.name == "text"
-        assert config.ner.name == "simple"
+        assert config.ner.name == "regex"
         assert config.candidate_generator.name == "fuzzy"
         assert config.reranker is None
         assert config.disambiguator is None
@@ -64,7 +64,7 @@ class TestPipelineConfig:
     def test_from_dict_with_none_optional_components(self):
         data = {
             "loader": {"name": "text", "params": {}},
-            "ner": {"name": "simple", "params": {}},
+            "ner": {"name": "regex", "params": {}},
             "candidate_generator": {"name": "fuzzy", "params": {}},
             "reranker": None,
             "disambiguator": None,
@@ -78,7 +78,7 @@ class TestPipelineConfig:
     def test_from_dict_params_default_to_empty_dict(self):
         data = {
             "loader": {"name": "text"},
-            "ner": {"name": "simple"},
+            "ner": {"name": "regex"},
             "candidate_generator": {"name": "fuzzy"},
         }
         config = PipelineConfig.from_dict(data)
@@ -89,7 +89,7 @@ class TestPipelineConfig:
     def test_from_dict_custom_cache_dir(self):
         data = {
             "loader": {"name": "text"},
-            "ner": {"name": "simple"},
+            "ner": {"name": "regex"},
             "candidate_generator": {"name": "fuzzy"},
             "cache_dir": "/custom/cache",
         }
@@ -99,7 +99,7 @@ class TestPipelineConfig:
     def test_from_dict_custom_batch_size(self):
         data = {
             "loader": {"name": "text"},
-            "ner": {"name": "simple"},
+            "ner": {"name": "regex"},
             "candidate_generator": {"name": "fuzzy"},
             "batch_size": 8,
         }

@@ -19,7 +19,7 @@ class TestPipelineCacheDirWiring:
     def config_dict(self, temp_jsonl_kb: str, temp_cache_dir: str) -> dict:
         return {
             "loader": {"name": "text"},
-            "ner": {"name": "simple", "params": {"min_len": 3}},
+            "ner": {"name": "regex", "params": {"min_len": 3}},
             "candidate_generator": {"name": "fuzzy", "params": {"top_k": 5}},
             "disambiguator": {"name": "first"},
             "knowledge_base": {"name": "jsonl", "params": {"path": temp_jsonl_kb}},
@@ -95,7 +95,7 @@ class TestKBCacheInvalidationIntegration:
         try:
             config_dict = {
                 "loader": {"name": "text"},
-                "ner": {"name": "simple", "params": {"min_len": 3}},
+                "ner": {"name": "regex", "params": {"min_len": 3}},
                 "candidate_generator": {"name": "fuzzy", "params": {"top_k": 5}},
                 "knowledge_base": {"name": "jsonl", "params": {"path": kb_path}},
                 "cache_dir": temp_cache_dir,
@@ -127,7 +127,7 @@ class TestKBCacheInvalidationIntegration:
 
         config_dict = {
             "loader": {"name": "text"},
-            "ner": {"name": "simple", "params": {"min_len": 3}},
+            "ner": {"name": "regex", "params": {"min_len": 3}},
             "candidate_generator": {"name": "fuzzy", "params": {"top_k": 5}},
             "knowledge_base": {"name": "jsonl", "params": {"path": temp_jsonl_kb}},
             "cache_dir": temp_cache_dir,

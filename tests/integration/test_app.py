@@ -324,7 +324,7 @@ class TestGetAvailableComponents:
     def test_ner_includes_expected_types(self):
         """NER includes expected types."""
         components = get_available_components()
-        assert "simple" in components["ner"]
+        assert "regex" in components["ner"]
         assert "spacy" in components["ner"]
         assert "gliner" in components["ner"]
 
@@ -354,7 +354,7 @@ class TestRunPipeline:
             file_input=None,
             kb_file=mock_kb_file,
             loader_type="text",
-            ner_type="simple",
+            ner_type="regex",
             spacy_model="en_core_web_sm",
             gliner_model="urchade/gliner_large",
             gliner_labels="",
@@ -402,7 +402,7 @@ class TestRunPipeline:
             file_input=None,
             kb_file=mock_kb_file,
             loader_type="text",
-            ner_type="simple",
+            ner_type="regex",
             spacy_model="en_core_web_sm",
             gliner_model="urchade/gliner_large",
             gliner_labels="",
@@ -445,7 +445,7 @@ class TestRunPipeline:
             file_input=None,
             kb_file=mock_kb_file,
             loader_type="text",
-            ner_type="simple",
+            ner_type="regex",
             spacy_model="en_core_web_sm",
             gliner_model="urchade/gliner_large",
             gliner_labels="",
@@ -491,7 +491,7 @@ class TestRunPipeline:
                 file_input=None,
                 kb_file=None,
                 loader_type="text",
-                ner_type="simple",
+                ner_type="regex",
                 spacy_model="en_core_web_sm",
                 gliner_model="urchade/gliner_large",
                 gliner_labels="",
@@ -534,7 +534,7 @@ class TestRunPipeline:
             file_input=None,
             kb_file=mock_kb_file,
             loader_type="text",
-            ner_type="simple",
+            ner_type="regex",
             spacy_model="en_core_web_sm",
             gliner_model="urchade/gliner_large",
             gliner_labels="",
@@ -578,7 +578,7 @@ class TestRunPipeline:
             file_input=None,
             kb_file=mock_kb_file,
             loader_type="text",
-            ner_type="simple",
+            ner_type="regex",
             spacy_model="en_core_web_sm",
             gliner_model="urchade/gliner_large",
             gliner_labels="",

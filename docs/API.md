@@ -152,7 +152,7 @@ lela = Lela("config.json")
 # From a dict
 lela = Lela({
     "loader": {"name": "text"},
-    "ner": {"name": "simple", "params": {"min_len": 3}},
+    "ner": {"name": "regex", "params": {"min_len": 3}},
     "candidate_generator": {"name": "fuzzy", "params": {"top_k": 10}},
     "reranker": {"name": "none"},
     "disambiguator": {"name": "first"},
@@ -485,7 +485,7 @@ candidate = Candidate(
 | Config Name | spaCy Factory |
 |-------------|---------------|
 | **NER** | |
-| `simple` | `simple_ner` |
+| `regex` | `simple_ner` |
 | `gliner` | `gliner_ner` |
 | `spacy` | Built-in NER + `ner_filter` |
 | **Candidate Generators** | |

@@ -1,5 +1,5 @@
 {
-  "ner": {"name": "simple"},
+  "ner": {"name": "regex"},
   "candidate_generator": {"name": "fuzzy"},
   "reranker": {"name": "none"},
   "disambiguator": {"name": "first"}
