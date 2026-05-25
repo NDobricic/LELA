@@ -75,6 +75,8 @@ def _get_vllm():
         "model_name": "Qwen/Qwen3-Reranker-4B-seq-cls",
         "top_k": 10,
         "estimated_vram_gb": get_model_vram_gb("Qwen/Qwen3-Reranker-4B-seq-cls"),
+        "predict_batch_size": 32,
+        "pair_chunk_size": 256,
     },
 )
 def create_cross_encoder_reranker_component(
@@ -83,6 +85,8 @@ def create_cross_encoder_reranker_component(
     model_name: str,
     top_k: int,
     estimated_vram_gb: float,
+    predict_batch_size: int,
+    pair_chunk_size: int,
 ):
     """Factory for cross-encoder reranker component."""
     return CrossEncoderRerankerComponent(
@@ -90,6 +94,8 @@ def create_cross_encoder_reranker_component(
         model_name=model_name,
         top_k=top_k,
         estimated_vram_gb=estimated_vram_gb,
+        predict_batch_size=predict_batch_size,
+        pair_chunk_size=pair_chunk_size,
     )
 
 
@@ -98,6 +104,10 @@ class CrossEncoderRerankerComponent:
     Cross-encoder reranker component for spaCy.
 
     Uses sentence-transformers CrossEncoder for pairwise scoring.
+    Pairs are batched across all mentions in the document; `predict_batch_size`
+    caps the per-GPU-step batch (VRAM), while `pair_chunk_size` controls how
+    many pairs are sent to `predict()` per call (Python-side memory + progress
+    reporting granularity).
     """
 
     def __init__(
@@ -106,11 +116,15 @@ class CrossEncoderRerankerComponent:
         model_name: str = "Qwen/Qwen3-Reranker-4B-seq-cls",
         top_k: int = 10,
         estimated_vram_gb: Optional[float] = None,
+        predict_batch_size: int = 32,
+        pair_chunk_size: int = 256,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
         self.estimated_vram_gb = estimated_vram_gb if estimated_vram_gb is not None else get_model_vram_gb(model_name)
+        self.predict_batch_size = predict_batch_size
+        self.pair_chunk_size = pair_chunk_size
         self.model = None
 
         ensure_candidates_extension()
@@ -154,59 +168,65 @@ class CrossEncoderRerankerComponent:
         """Rerank candidates for all entities in the document."""
         text = doc.text
         entities = list(doc.ents)
-        num_entities = len(entities)
 
         self._ensure_model_loaded()
 
         try:
-            for i, ent in enumerate(entities):
-                # Report progress if callback is set
-                if self.progress_callback and num_entities > 0:
-                    progress = i / num_entities
-                    ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                    self.progress_callback(
-                        progress, f"Reranking {i+1}/{num_entities}: {ent_text}"
-                    )
-
+            # Collect every (query, candidate) pair across all mentions,
+            # remembering each mention's slice into the flat list.
+            all_pairs: List[tuple] = []
+            groups = []  # list of (start, end, ent, candidates)
+            offset = 0
+            for ent in entities:
                 candidates = getattr(ent._, "candidates", [])
                 if not candidates:
                     continue
+                query = self._format_query(text, ent.start_char, ent.end_char)
+                pairs = [(query, self._format_candidate(c)) for c in candidates]
+                all_pairs.extend(pairs)
+                groups.append((offset, offset + len(pairs), ent, candidates))
+                offset += len(pairs)
 
-                # Build pairs for cross-encoder
-                pairs = [
-                    (
-                        self._format_query(text, ent.start_char, ent.end_char),
-                        self._format_candidate(c),
+            if not all_pairs:
+                return doc
+
+            total_pairs = len(all_pairs)
+            all_scores = np.empty(total_pairs, dtype=np.float32)
+
+            # Process pairs in chunks for progress reporting + Python-side
+            # memory. Within each chunk, predict() mini-batches internally
+            # using predict_batch_size, which is the actual VRAM cap.
+            for chunk_start in range(0, total_pairs, self.pair_chunk_size):
+                chunk_end = min(chunk_start + self.pair_chunk_size, total_pairs)
+                chunk_scores = self.model.predict(
+                    all_pairs[chunk_start:chunk_end],
+                    batch_size=self.predict_batch_size,
+                )
+                all_scores[chunk_start:chunk_end] = chunk_scores
+
+                if self.progress_callback:
+                    self.progress_callback(
+                        chunk_end / total_pairs,
+                        f"Reranking {chunk_end}/{total_pairs} pairs",
                     )
-                    for c in candidates
+
+            # Assign scores back per mention, sort, take top_k.
+            for start, end, ent, candidates in groups:
+                scores = all_scores[start:end]
+                scored = sorted(
+                    zip(candidates, scores), key=lambda x: x[1], reverse=True
+                )[: self.top_k]
+                ent._.candidates = [
+                    Candidate(
+                        entity_id=c.entity_id,
+                        score=float(s),
+                        description=c.description,
+                    )
+                    for c, s in scored
                 ]
-
-                # Score pairs
-                scores = self.model.predict(pairs)
-
-                # Sort and take top_k
-                scored_candidates = list(zip(candidates, scores))
-                scored_candidates.sort(key=lambda x: x[1], reverse=True)
-                top_candidates = scored_candidates[: self.top_k]
-
-                # Update candidates with new scores
-                reranked = []
-                reranked_scores = []
-                for candidate, score in top_candidates:
-                    reranked.append(
-                        Candidate(
-                            entity_id=candidate.entity_id,
-                            score=float(score),
-                            description=candidate.description,
-                        )
-                    )
-                    reranked_scores.append(float(score))
-
-                ent._.candidates = reranked
-                ent._.candidate_scores = reranked_scores
-
+                ent._.candidate_scores = [float(s) for _, s in scored]
                 logger.debug(
-                    f"Cross-encoder reranked {len(candidates)} to {len(ent._.candidates)} for '{ent.text}'"
+                    f"Cross-encoder reranked {end - start} to {len(ent._.candidates)} for '{ent.text}'"
                 )
         finally:
             release_generic(f"cross_encoder:{self.model_name}")
