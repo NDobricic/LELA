@@ -4,7 +4,7 @@ Standalone, swappable NER → candidate generation → rerank → disambiguation
 
 ## Install
 
-**Requirements:** Python 3.10-3.12 (Python 3.13 is NOT supported due to vLLM), CUDA 12.x for GPU support
+**Requirements:** Python >=3.10, CUDA 12.x for GPU support
 
 ```bash
 python3.10 -m venv .venv
@@ -96,4 +96,4 @@ results = lela.run("docs/file1.txt", "docs/file2.txt")
 - Outputs are JSONL (one line per document with resolved entities).
   - Each line: `id`, `text`, `entities` (with `text`, `start`, `end`, `label`, `entity_id`, `entity_title`, `entity_description`, `candidates`).
 - Cache lives in `.ner_cache/` keyed by file path, mtime, and size.
-- No dependency on LELA; integration would be optional if added later. 
+- No dependency on LELA; integration would be optional if added later.

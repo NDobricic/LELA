@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "lela"
 version = "0.2.0"
 description = "A modular NER and entity linking pipeline"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4>=4.14.3",
     "bm25s>=0.2.14",
