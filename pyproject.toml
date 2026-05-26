@@ -22,19 +22,12 @@ dependencies = [
     "rapidfuzz==3.14.3",
     "sentence-transformers>=5.2.2",
     "spacy>=3.8.11",
-<<<<<<< Updated upstream
-=======
-    "vllm>=0.20.0",
     "transformers>=5.5.0",
->>>>>>> Stashed changes
 ]
 
 [project.optional-dependencies]
-# Gradio web UI (`python app.py`). Install with: pip install "lela[ui]"
 ui = ["gradio>=6.5.1"]
-# Local LLM disambiguation / reranking via vLLM. Requires CUDA; skip on Mac
-# and CPU-only environments. Install with: pip install "lela[vllm]"
-vllm = ["vllm>=0.19.0"]
+vllm = ["vllm>=0.20.0"]
 
 [project.scripts]
 lela = "lela.cli:main"
