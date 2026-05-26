@@ -19,6 +19,8 @@ AVAILABLE_LLM_MODELS = [
     ("Qwen/Qwen3-4B", "Qwen3-4B", 9.5),
     ("Qwen/Qwen3-8B", "Qwen3-8B", 18.5),
     ("Qwen/Qwen3-14B", "Qwen3-14B", 32.5),
+    ("google/gemma-4-E2B-it", "Gemma-4-E2B-it", 5.0),
+    ("google/gemma-4-E4B-it", "Gemma-4-E4B-it", 9.5),
 ]
 
 # Available embedding models (model_id, display_name, vram_gb)
@@ -54,6 +56,7 @@ def get_model_vram_gb(model_id: str) -> float:
                 return entry[2]
     return 2.0
 
+
 # Qwen3-Reranker prompt templates (no colons after tags)
 CROSS_ENCODER_PREFIX = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
 CROSS_ENCODER_SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
@@ -88,8 +91,5 @@ RERANKER_TASK = (
 # Default generation config for LLM disambiguation
 # Qwen3 needs more tokens due to thinking mode
 DEFAULT_GENERATION_CONFIG = {
-    "max_tokens": 4096,  # More tokens for thinking mode + answer
-    # "temperature": 0.1,  # Low temperature for deterministic outputs
-    # "top_p": 0.9,
-    # "repetition_penalty": 1.1,  # Prevent repetitive garbage output
+    "max_tokens": 2048,  # More tokens for thinking mode + answer
 }

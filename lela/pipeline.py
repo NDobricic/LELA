@@ -33,7 +33,7 @@ from .types import Candidate, Document, ProgressCallback
 
 # Component name mapping from config names to spaCy factory names
 NER_COMPONENT_MAP = {
-    "simple": "simple_ner",
+    "regex": "simple_ner",
     "gliner": "gliner_ner",
     "spacy": None,  # Use built-in spaCy NER
 }

@@ -31,12 +31,18 @@ from lela.lela.prompts import (
     create_disambiguation_messages,
     DEFAULT_SYSTEM_PROMPT,
 )
-from lela.lela.llm_pool import get_vllm_instance, release_vllm, get_generic_instance, release_generic
+from lela.lela.llm_pool import (
+    get_vllm_instance,
+    release_vllm,
+    get_generic_instance,
+    release_generic,
+)
 from lela.memory import gb_to_vllm_fraction
 from lela.utils import (
     ensure_candidates_extension,
     ensure_resolved_entity_extension,
 )
+from lela.context import build_marked_text as _build_marked_text
 from lela.types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
@@ -70,6 +76,42 @@ def _ensure_extensions():
     ensure_resolved_entity_extension()
 
 
+def _parse_answer(output: str) -> int:
+    """Extract the answer index from an LLM output.
+
+    Looks for ``answer ...: N``, falling back to the last number on the last
+    non-empty line. Returns 0 if no number is found. Models are expected to
+    emit the final ``answer: N`` once at the end of the response.
+    """
+    match = re.search(r"answer\D*:\s*(\d+)", output, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+
+    lines = [line.strip() for line in output.strip().split("\n") if line.strip()]
+    if lines:
+        numbers = re.findall(r"\d+", lines[-1])
+        if numbers:
+            return int(numbers[-1])
+
+    return 0
+
+
+def _resolve_chat_template_kwargs(
+    model_name: str, enable_thinking: Optional[bool]
+) -> dict:
+    """Return chat_template_kwargs for apply_chat_template / vLLM chat APIs.
+
+    Precedence: explicit ``enable_thinking`` wins; otherwise auto-default
+    Gemma-4 to True (its template needs it) and leave others to the template
+    default by returning ``{}``.
+    """
+    if enable_thinking is not None:
+        return {"enable_thinking": enable_thinking}
+    if "gemma-4" in (model_name or "").lower():
+        return {"enable_thinking": True}
+    return {}
+
+
 # ============================================================================
 # LELA vLLM Disambiguator Component
 # ============================================================================
@@ -84,10 +126,11 @@ def _ensure_extensions():
         "gpu_memory_gb": None,
         "add_none_candidate": True,
         "add_descriptions": True,
-        "disable_thinking": False,
+        "enable_thinking": None,
         "system_prompt": None,
         "generation_config": None,
         "self_consistency_k": 1,
+        "context_window": 0,
     },
 )
 def create_lela_vllm_disambiguator_component(
@@ -99,10 +142,11 @@ def create_lela_vllm_disambiguator_component(
     gpu_memory_gb: Optional[float],
     add_none_candidate: bool,
     add_descriptions: bool,
-    disable_thinking: bool,
+    enable_thinking: Optional[bool],
     system_prompt: Optional[str],
     generation_config: Optional[dict],
     self_consistency_k: int,
+    context_window: int,
 ):
     """Factory for LELA vLLM disambiguator component."""
     return LELAvLLMDisambiguatorComponent(
@@ -113,10 +157,11 @@ def create_lela_vllm_disambiguator_component(
         gpu_memory_gb=gpu_memory_gb,
         add_none_candidate=add_none_candidate,
         add_descriptions=add_descriptions,
-        disable_thinking=disable_thinking,
+        enable_thinking=enable_thinking,
         system_prompt=system_prompt,
         generation_config=generation_config,
         self_consistency_k=self_consistency_k,
+        context_window=context_window,
     )
 
 
@@ -141,22 +186,26 @@ class LELAvLLMDisambiguatorComponent:
         gpu_memory_gb: Optional[float] = None,
         add_none_candidate: bool = False,
         add_descriptions: bool = True,
-        disable_thinking: bool = False,
+        enable_thinking: Optional[bool] = None,
         system_prompt: Optional[str] = None,
         generation_config: Optional[dict] = None,
         self_consistency_k: int = 1,
+        context_window: int = 0,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.tensor_parallel_size = tensor_parallel_size
         self.max_model_len = max_model_len
         self.gpu_memory_gb = gpu_memory_gb
-        self.gpu_memory_utilization = gb_to_vllm_fraction(gpu_memory_gb) if gpu_memory_gb is not None else None
+        self.gpu_memory_utilization = (
+            gb_to_vllm_fraction(gpu_memory_gb) if gpu_memory_gb is not None else None
+        )
         self.add_none_candidate = add_none_candidate
         self.add_descriptions = add_descriptions
-        self.disable_thinking = disable_thinking
+        self.enable_thinking = enable_thinking
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.self_consistency_k = self_consistency_k
+        self.context_window = context_window
         self.generation_config = generation_config or DEFAULT_GENERATION_CONFIG
 
         _ensure_extensions()
@@ -178,44 +227,20 @@ class LELAvLLMDisambiguatorComponent:
         """Initialize the component with a knowledge base."""
         self.kb = kb
 
-    @staticmethod
-    def _parse_output(output: str) -> int:
-        """Parse LLM output to extract answer index.
+    def _apply_self_consistency(self, outputs: list, n_candidates: int) -> int:
+        """Apply self-consistency voting over multiple outputs.
 
-        Handles multiple formats:
-        - "answer": 3  (standard format)
-        - answer: 3
-        - 3  (just a number, common with /no_think mode)
+        When add_none_candidate is False, invalid answers (0 or out-of-range)
+        are dropped before voting so they can't outvote valid ones.
         """
-        # Try standard format first: "answer": N or answer: N
-        match = re.search(r'"?answer"?\s*:\s*(\d+)', output, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-
-        # Try to find any standalone number (for /no_think mode which may output just "3")
-        # Look for a number that's either at the start/end or surrounded by whitespace/punctuation
-        match = re.search(r"(?:^|\s)(\d+)(?:\s|$|\.)", output.strip())
-        if match:
-            return int(match.group(1))
-
-        # Last resort: find any digit
-        match = re.search(r"(\d+)", output)
-        if match:
-            return int(match.group(1))
-
-        logger.debug(f"Could not parse answer from output: {output}")
-        return 0
-
-    def _apply_self_consistency(self, outputs: list) -> int:
-        """Apply self-consistency voting over multiple outputs."""
         if self.self_consistency_k == 1:
-            return self._parse_output(outputs[0].text)
-        answers = [self._parse_output(o.text) for o in outputs]
+            return _parse_answer(outputs[0].text)
+        answers = [_parse_answer(o.text) for o in outputs]
+        if not self.add_none_candidate:
+            answers = [a for a in answers if 0 < a <= n_candidates]
+            if not answers:
+                return 0
         return Counter(answers).most_common(1)[0][0]
-
-    def _mark_mention(self, text: str, start: int, end: int) -> str:
-        """Mark mention in text with brackets."""
-        return f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
 
     def _ensure_llm_loaded(self, progress_callback=None):
         """Load LLM on-demand if not already loaded."""
@@ -249,7 +274,6 @@ class LELAvLLMDisambiguatorComponent:
             )
             return doc
 
-        text = doc.text
         entities = list(doc.ents)
         num_entities = len(entities)
 
@@ -302,8 +326,8 @@ class LELAvLLMDisambiguatorComponent:
                 0.1, f"preparing prompt ({len(candidates)} candidates)"
             )
 
-            # Mark mention in text
-            marked_text = self._mark_mention(text, ent.start_char, ent.end_char)
+            # Mark mention in text (optionally cropped to context_window tokens)
+            marked_text = _build_marked_text(doc, ent, self.context_window)
 
             # Create messages for LLM
             messages = create_disambiguation_messages(
@@ -313,13 +337,16 @@ class LELAvLLMDisambiguatorComponent:
                 system_prompt=self.system_prompt,
                 add_none_candidate=self.add_none_candidate,
                 add_descriptions=self.add_descriptions,
-                disable_thinking=self.disable_thinking,
             )
 
+            chat_template_kwargs = _resolve_chat_template_kwargs(
+                self.model_name, self.enable_thinking
+            )
             prompt = tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
+                **chat_template_kwargs,
             )
 
             if logger.isEnabledFor(logging.DEBUG):
@@ -383,7 +410,9 @@ class LELAvLLMDisambiguatorComponent:
                         f"LLM raw output for '{item['ent_text']}': {raw_output}"
                     )
 
-                    answer = self._apply_self_consistency(response.outputs)
+                    answer = self._apply_self_consistency(
+                        response.outputs, len(item["candidates"])
+                    )
                     logger.debug(
                         f"Parsed answer: {answer} (from {len(item['candidates'])} candidates)"
                     )
@@ -418,7 +447,11 @@ class LELAvLLMDisambiguatorComponent:
                     continue
 
         # Release LLM - stays cached but can be evicted if memory needed
-        release_vllm(self.model_name, self.tensor_parallel_size, gpu_memory_utilization=self.gpu_memory_utilization)
+        release_vllm(
+            self.model_name,
+            self.tensor_parallel_size,
+            gpu_memory_utilization=self.gpu_memory_utilization,
+        )
         self.llm = None  # Drop reference so pool eviction can free GPU memory
 
         # Clear progress callback after processing
@@ -440,9 +473,10 @@ class LELAvLLMDisambiguatorComponent:
         "api_key": None,
         "add_none_candidate": True,
         "add_descriptions": True,
-        "disable_thinking": False,
+        "enable_thinking": None,
         "system_prompt": None,
         "self_consistency_k": 1,
+        "context_window": 0,
     },
 )
 def create_lela_openai_api_disambiguator_component(
@@ -453,9 +487,10 @@ def create_lela_openai_api_disambiguator_component(
     api_key: Optional[str],
     add_none_candidate: bool,
     add_descriptions: bool,
-    disable_thinking: bool,
+    enable_thinking: Optional[bool],
     system_prompt: Optional[str],
     self_consistency_k: int,
+    context_window: int,
 ):
     """Factory for LELA OpenAI-compatible API disambiguator component."""
     return LELAOpenAIAPIDisambiguatorComponent(
@@ -465,9 +500,10 @@ def create_lela_openai_api_disambiguator_component(
         api_key=api_key,
         add_none_candidate=add_none_candidate,
         add_descriptions=add_descriptions,
-        disable_thinking=disable_thinking,
+        enable_thinking=enable_thinking,
         system_prompt=system_prompt,
         self_consistency_k=self_consistency_k,
+        context_window=context_window,
     )
 
 
@@ -488,9 +524,10 @@ class LELAOpenAIAPIDisambiguatorComponent:
         api_key: Optional[str] = None,
         add_none_candidate: bool = False,
         add_descriptions: bool = True,
-        disable_thinking: bool = False,
+        enable_thinking: Optional[bool] = None,
         system_prompt: Optional[str] = None,
         self_consistency_k: int = 1,
+        context_window: int = 0,
     ):
         self.nlp = nlp
         self.model_name = model_name
@@ -498,9 +535,10 @@ class LELAOpenAIAPIDisambiguatorComponent:
         self.api_key = api_key
         self.add_none_candidate = add_none_candidate
         self.add_descriptions = add_descriptions
-        self.disable_thinking = disable_thinking
+        self.enable_thinking = enable_thinking
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.self_consistency_k = self_consistency_k
+        self.context_window = context_window
 
         _ensure_extensions()
 
@@ -520,40 +558,20 @@ class LELAOpenAIAPIDisambiguatorComponent:
         """Initialize the component with a knowledge base."""
         self.kb = kb
 
-    @staticmethod
-    def _parse_output(output: str) -> int:
-        """Parse LLM output to extract answer index.
+    def _apply_self_consistency(self, outputs: list, n_candidates: int) -> int:
+        """Apply self-consistency voting over multiple outputs.
 
-        Handles multiple formats:
-        - "answer": 3  (standard format)
-        - answer: 3
-        - 3  (just a number, common with /no_think mode)
+        When add_none_candidate is False, invalid answers (0 or out-of-range)
+        are dropped before voting so they can't outvote valid ones.
         """
-        match = re.search(r'"?answer"?\s*:\s*(\d+)', output, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-
-        match = re.search(r"(?:^|\s)(\d+)(?:\s|$|\.)", output.strip())
-        if match:
-            return int(match.group(1))
-
-        match = re.search(r"(\d+)", output)
-        if match:
-            return int(match.group(1))
-
-        logger.debug(f"Could not parse answer from output: {output}")
-        return 0
-
-    def _apply_self_consistency(self, outputs: list) -> int:
-        """Apply self-consistency voting over multiple outputs."""
         if self.self_consistency_k == 1:
-            return self._parse_output(outputs[0])
-        answers = [self._parse_output(o) for o in outputs]
+            return _parse_answer(outputs[0])
+        answers = [_parse_answer(o) for o in outputs]
+        if not self.add_none_candidate:
+            answers = [a for a in answers if 0 < a <= n_candidates]
+            if not answers:
+                return 0
         return Counter(answers).most_common(1)[0][0]
-
-    def _mark_mention(self, text: str, start: int, end: int) -> str:
-        """Mark mention in text with brackets."""
-        return f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
 
     def _post_chat_completion(self, payload: dict) -> dict:
         headers = {"User-Agent": "LELA Client"}
@@ -583,7 +601,6 @@ class LELAOpenAIAPIDisambiguatorComponent:
             )
             return doc
 
-        text = doc.text
         entities = list(doc.ents)
         num_entities = len(entities)
 
@@ -628,7 +645,7 @@ class LELAOpenAIAPIDisambiguatorComponent:
                 0.1, f"preparing prompt ({len(candidates)} candidates)"
             )
 
-            marked_text = self._mark_mention(text, ent.start_char, ent.end_char)
+            marked_text = _build_marked_text(doc, ent, self.context_window)
 
             messages = create_disambiguation_messages(
                 marked_text=marked_text,
@@ -637,7 +654,6 @@ class LELAOpenAIAPIDisambiguatorComponent:
                 system_prompt=self.system_prompt,
                 add_none_candidate=self.add_none_candidate,
                 add_descriptions=self.add_descriptions,
-                disable_thinking=self.disable_thinking,
             )
 
             if logger.isEnabledFor(logging.DEBUG):
@@ -652,6 +668,12 @@ class LELAOpenAIAPIDisambiguatorComponent:
             }
             if self.model_name:
                 payload["model"] = self.model_name
+            chat_template_kwargs = _resolve_chat_template_kwargs(
+                self.model_name or "", self.enable_thinking
+            )
+            if chat_template_kwargs:
+                # vLLM-compatible OpenAI endpoints accept this top-level field.
+                payload["chat_template_kwargs"] = chat_template_kwargs
 
             # generation_config = dict(self.generation_config)
             # generation_config["n"] = self.self_consistency_k
@@ -682,7 +704,7 @@ class LELAOpenAIAPIDisambiguatorComponent:
                     for output in outputs:
                         logger.debug(f"LLM raw output for '{ent_text}': {output}")
 
-                answer = self._apply_self_consistency(outputs)
+                answer = self._apply_self_consistency(outputs, len(candidates))
                 logger.debug(
                     f"Parsed answer: {answer} (from {len(candidates)} candidates)"
                 )
@@ -731,10 +753,11 @@ class LELAOpenAIAPIDisambiguatorComponent:
         "model_name": DEFAULT_LLM_MODEL,
         "add_none_candidate": True,  # Enable NIL handling by default
         "add_descriptions": True,
-        "disable_thinking": False,
+        "enable_thinking": None,
         "system_prompt": None,
         "generation_config": None,
         "estimated_vram_gb": get_model_vram_gb(DEFAULT_LLM_MODEL),
+        "context_window": 0,
     },
 )
 def create_lela_transformers_disambiguator_component(
@@ -743,10 +766,11 @@ def create_lela_transformers_disambiguator_component(
     model_name: str,
     add_none_candidate: bool,
     add_descriptions: bool,
-    disable_thinking: bool,
+    enable_thinking: Optional[bool],
     system_prompt: Optional[str],
     generation_config: Optional[dict],
     estimated_vram_gb: float,
+    context_window: int,
 ):
     """Factory for LELA transformers disambiguator component."""
     return LELATransformersDisambiguatorComponent(
@@ -754,10 +778,11 @@ def create_lela_transformers_disambiguator_component(
         model_name=model_name,
         add_none_candidate=add_none_candidate,
         add_descriptions=add_descriptions,
-        disable_thinking=disable_thinking,
+        enable_thinking=enable_thinking,
         system_prompt=system_prompt,
         generation_config=generation_config,
         estimated_vram_gb=estimated_vram_gb,
+        context_window=context_window,
     )
 
 
@@ -774,19 +799,25 @@ class LELATransformersDisambiguatorComponent:
         model_name: str = DEFAULT_LLM_MODEL,
         add_none_candidate: bool = False,
         add_descriptions: bool = True,
-        disable_thinking: bool = True,
+        enable_thinking: Optional[bool] = None,
         system_prompt: Optional[str] = None,
         generation_config: Optional[dict] = None,
         estimated_vram_gb: Optional[float] = None,
+        context_window: int = 0,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.add_none_candidate = add_none_candidate
         self.add_descriptions = add_descriptions
-        self.disable_thinking = disable_thinking
+        self.enable_thinking = enable_thinking
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.generation_config = generation_config or DEFAULT_GENERATION_CONFIG
-        self.estimated_vram_gb = estimated_vram_gb if estimated_vram_gb is not None else get_model_vram_gb(model_name)
+        self.estimated_vram_gb = (
+            estimated_vram_gb
+            if estimated_vram_gb is not None
+            else get_model_vram_gb(model_name)
+        )
+        self.context_window = context_window
         self.model = None
         self.tokenizer = None
 
@@ -825,38 +856,6 @@ class LELATransformersDisambiguatorComponent:
         """Initialize the component with a knowledge base."""
         self.kb = kb
 
-    @staticmethod
-    def _parse_output(output: str) -> int:
-        """Parse LLM output to extract answer index.
-
-        Handles Qwen3 thinking mode by extracting content after </think> tag.
-        """
-        # Handle Qwen3 thinking mode - extract content after </think>
-        if "</think>" in output:
-            output = output.split("</think>")[-1].strip()
-
-        # Try standard format: "answer": N or answer: N
-        match = re.search(r'"?answer"?\s*:\s*(\d+)', output, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-
-        # Try standalone number
-        match = re.search(r"(?:^|\s)(\d+)(?:\s|$|\.)", output.strip())
-        if match:
-            return int(match.group(1))
-
-        # Last resort: find any digit
-        match = re.search(r"(\d+)", output)
-        if match:
-            return int(match.group(1))
-
-        logger.debug(f"Could not parse answer from output: {output}")
-        return 0
-
-    def _mark_mention(self, text: str, start: int, end: int) -> str:
-        """Mark mention in text with brackets."""
-        return f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
-
     def __call__(self, doc: Doc) -> Doc:
         """Disambiguate all entities in the document."""
         import torch
@@ -867,7 +866,6 @@ class LELATransformersDisambiguatorComponent:
             )
             return doc
 
-        text = doc.text
         entities = list(doc.ents)
         num_entities = len(entities)
 
@@ -904,7 +902,7 @@ class LELATransformersDisambiguatorComponent:
                     0.1, f"preparing prompt ({len(candidates)} candidates)"
                 )
 
-                marked_text = self._mark_mention(text, ent.start_char, ent.end_char)
+                marked_text = _build_marked_text(doc, ent, self.context_window)
                 messages = create_disambiguation_messages(
                     marked_text=marked_text,
                     candidates=candidates,
@@ -912,16 +910,19 @@ class LELATransformersDisambiguatorComponent:
                     system_prompt=self.system_prompt,
                     add_none_candidate=self.add_none_candidate,
                     add_descriptions=self.add_descriptions,
-                    disable_thinking=self.disable_thinking,
                 )
 
                 report_entity_progress(0.2, "calling LLM...")
 
                 try:
+                    chat_template_kwargs = _resolve_chat_template_kwargs(
+                        self.model_name, self.enable_thinking
+                    )
                     prompt = self.tokenizer.apply_chat_template(
                         messages,
                         tokenize=False,
                         add_generation_prompt=True,
+                        **chat_template_kwargs,
                     )
                     for msg in messages:
                         logger.debug(f"[{msg['role']}] {msg['content']}")
@@ -931,7 +932,9 @@ class LELATransformersDisambiguatorComponent:
                     with torch.no_grad():
                         outputs = self.model.generate(
                             **inputs,
-                            max_new_tokens=self.generation_config.get("max_tokens", 2048),
+                            max_new_tokens=self.generation_config.get(
+                                "max_tokens", 2048
+                            ),
                             temperature=self.generation_config.get("temperature"),
                             do_sample=True,
                             pad_token_id=self.tokenizer.eos_token_id,
@@ -950,7 +953,7 @@ class LELATransformersDisambiguatorComponent:
                 report_entity_progress(0.9, "parsing LLM response")
 
                 try:
-                    answer = self._parse_output(raw_output)
+                    answer = _parse_answer(raw_output)
                     logger.debug(
                         f"Parsed answer: {answer} (from {len(candidates)} candidates)"
                     )

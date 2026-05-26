@@ -92,7 +92,7 @@ The configuration names map to spaCy component factories:
 | Config Name | spaCy Factory | Description |
 |-------------|---------------|-------------|
 | **NER** | | |
-| `simple` | `simple_ner` | Regex-based NER |
+| `regex` | `simple_ner` | Regex-based NER |
 | `spacy` | Built-in + filter | spaCy's pretrained NER |
 | `gliner` | `gliner_ner` | GLiNER zero-shot |
 | **Candidate Generators** | | |
@@ -115,12 +115,12 @@ The configuration names map to spaCy component factories:
 
 ### Example Configurations
 
-#### Minimal Configuration (Simple NER + Fuzzy Matching)
+#### Minimal Configuration (Regex NER + Fuzzy Matching)
 
 ```json
 {
   "loader": {"name": "text"},
-  "ner": {"name": "simple", "params": {"min_len": 3}},
+  "ner": {"name": "regex", "params": {"min_len": 3}},
   "candidate_generator": {"name": "fuzzy", "params": {"top_k": 10}},
   "reranker": {"name": "none"},
   "disambiguator": {"name": "first"},

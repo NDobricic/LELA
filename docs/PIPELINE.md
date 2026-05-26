@@ -102,7 +102,7 @@ doc = nlp("Albert Einstein visited Paris.")
 
 | Config Name | spaCy Factory Name |
 |-------------|-------------------|
-| `simple` | `simple_ner` |
+| `regex` | `simple_ner` |
 | `gliner` | `gliner_ner` |
 | `dense` | `dense_candidates` |
 | `fuzzy` | `fuzzy_candidates` |
@@ -411,10 +411,11 @@ vLLM-based LLM disambiguation - sends all candidates at once.
 | `max_model_len` | int | None | Max context length |
 | `add_none_candidate` | bool | True | Add "None" option |
 | `add_descriptions` | bool | True | Include descriptions |
-| `disable_thinking` | bool | True | Disable reasoning |
+| `enable_thinking` | bool \| None | None | Pass through to chat template (`chat_template_kwargs`). `None` = template default; auto-True for `gemma-4` models |
 | `system_prompt` | str | LELA default | Custom prompt |
 | `generation_config` | dict | {} | vLLM settings |
 | `self_consistency_k` | int | 1 | Voting samples |
+| `context_window` | int | 0 | Token window around mention; 0 = full doc |
 
 **Requires:** `initialize(kb)` call
 

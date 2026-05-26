@@ -40,6 +40,7 @@ from lela.lela.llm_pool import (
 )
 from lela.memory import gb_to_vllm_fraction
 from lela.utils import ensure_candidates_extension
+from lela.context import build_marked_text
 from lela.types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,9 @@ def _get_vllm():
         "model_name": "Qwen/Qwen3-Reranker-4B-seq-cls",
         "top_k": 10,
         "estimated_vram_gb": get_model_vram_gb("Qwen/Qwen3-Reranker-4B-seq-cls"),
+        "predict_batch_size": 32,
+        "pair_chunk_size": 256,
+        "context_window": 0,
     },
 )
 def create_cross_encoder_reranker_component(
@@ -83,6 +87,9 @@ def create_cross_encoder_reranker_component(
     model_name: str,
     top_k: int,
     estimated_vram_gb: float,
+    predict_batch_size: int,
+    pair_chunk_size: int,
+    context_window: int,
 ):
     """Factory for cross-encoder reranker component."""
     return CrossEncoderRerankerComponent(
@@ -90,6 +97,9 @@ def create_cross_encoder_reranker_component(
         model_name=model_name,
         top_k=top_k,
         estimated_vram_gb=estimated_vram_gb,
+        predict_batch_size=predict_batch_size,
+        pair_chunk_size=pair_chunk_size,
+        context_window=context_window,
     )
 
 
@@ -98,6 +108,10 @@ class CrossEncoderRerankerComponent:
     Cross-encoder reranker component for spaCy.
 
     Uses sentence-transformers CrossEncoder for pairwise scoring.
+    Pairs are batched across all mentions in the document; `predict_batch_size`
+    caps the per-GPU-step batch (VRAM), while `pair_chunk_size` controls how
+    many pairs are sent to `predict()` per call (Python-side memory + progress
+    reporting granularity).
     """
 
     def __init__(
@@ -106,11 +120,17 @@ class CrossEncoderRerankerComponent:
         model_name: str = "Qwen/Qwen3-Reranker-4B-seq-cls",
         top_k: int = 10,
         estimated_vram_gb: Optional[float] = None,
+        predict_batch_size: int = 32,
+        pair_chunk_size: int = 256,
+        context_window: int = 0,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
         self.estimated_vram_gb = estimated_vram_gb if estimated_vram_gb is not None else get_model_vram_gb(model_name)
+        self.predict_batch_size = predict_batch_size
+        self.pair_chunk_size = pair_chunk_size
+        self.context_window = context_window
         self.model = None
 
         ensure_candidates_extension()
@@ -138,11 +158,9 @@ class CrossEncoderRerankerComponent:
 
         self.model, _ = get_generic_instance(key, loader, self.estimated_vram_gb)
 
-    def _format_query(self, text: str, start: int, end: int) -> str:
+    def _format_query(self, doc: Doc, ent: Span) -> str:
         prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
-        marked_text = (
-            f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
-        )
+        marked_text = build_marked_text(doc, ent, self.context_window)
         return f"{prefix}<Instruct>: {RERANKER_TASK}\n<Query>: {marked_text}\n"
 
     def _format_candidate(self, candidate: Candidate) -> str:
@@ -152,61 +170,66 @@ class CrossEncoderRerankerComponent:
 
     def __call__(self, doc: Doc) -> Doc:
         """Rerank candidates for all entities in the document."""
-        text = doc.text
         entities = list(doc.ents)
-        num_entities = len(entities)
 
         self._ensure_model_loaded()
 
         try:
-            for i, ent in enumerate(entities):
-                # Report progress if callback is set
-                if self.progress_callback and num_entities > 0:
-                    progress = i / num_entities
-                    ent_text = ent.text[:25] + "..." if len(ent.text) > 25 else ent.text
-                    self.progress_callback(
-                        progress, f"Reranking {i+1}/{num_entities}: {ent_text}"
-                    )
-
+            # Collect every (query, candidate) pair across all mentions,
+            # remembering each mention's slice into the flat list.
+            all_pairs: List[tuple] = []
+            groups = []  # list of (start, end, ent, candidates)
+            offset = 0
+            for ent in entities:
                 candidates = getattr(ent._, "candidates", [])
                 if not candidates:
                     continue
+                query = self._format_query(doc, ent)
+                pairs = [(query, self._format_candidate(c)) for c in candidates]
+                all_pairs.extend(pairs)
+                groups.append((offset, offset + len(pairs), ent, candidates))
+                offset += len(pairs)
 
-                # Build pairs for cross-encoder
-                pairs = [
-                    (
-                        self._format_query(text, ent.start_char, ent.end_char),
-                        self._format_candidate(c),
+            if not all_pairs:
+                return doc
+
+            total_pairs = len(all_pairs)
+            all_scores = np.empty(total_pairs, dtype=np.float32)
+
+            # Process pairs in chunks for progress reporting + Python-side
+            # memory. Within each chunk, predict() mini-batches internally
+            # using predict_batch_size, which is the actual VRAM cap.
+            for chunk_start in range(0, total_pairs, self.pair_chunk_size):
+                chunk_end = min(chunk_start + self.pair_chunk_size, total_pairs)
+                chunk_scores = self.model.predict(
+                    all_pairs[chunk_start:chunk_end],
+                    batch_size=self.predict_batch_size,
+                )
+                all_scores[chunk_start:chunk_end] = chunk_scores
+
+                if self.progress_callback:
+                    self.progress_callback(
+                        chunk_end / total_pairs,
+                        f"Reranking {chunk_end}/{total_pairs} pairs",
                     )
-                    for c in candidates
+
+            # Assign scores back per mention, sort, take top_k.
+            for start, end, ent, candidates in groups:
+                scores = all_scores[start:end]
+                scored = sorted(
+                    zip(candidates, scores), key=lambda x: x[1], reverse=True
+                )[: self.top_k]
+                ent._.candidates = [
+                    Candidate(
+                        entity_id=c.entity_id,
+                        score=float(s),
+                        description=c.description,
+                    )
+                    for c, s in scored
                 ]
-
-                # Score pairs
-                scores = self.model.predict(pairs)
-
-                # Sort and take top_k
-                scored_candidates = list(zip(candidates, scores))
-                scored_candidates.sort(key=lambda x: x[1], reverse=True)
-                top_candidates = scored_candidates[: self.top_k]
-
-                # Update candidates with new scores
-                reranked = []
-                reranked_scores = []
-                for candidate, score in top_candidates:
-                    reranked.append(
-                        Candidate(
-                            entity_id=candidate.entity_id,
-                            score=float(score),
-                            description=candidate.description,
-                        )
-                    )
-                    reranked_scores.append(float(score))
-
-                ent._.candidates = reranked
-                ent._.candidate_scores = reranked_scores
-
+                ent._.candidate_scores = [float(s) for _, s in scored]
                 logger.debug(
-                    f"Cross-encoder reranked {len(candidates)} to {len(ent._.candidates)} for '{ent.text}'"
+                    f"Cross-encoder reranked {end - start} to {len(ent._.candidates)} for '{ent.text}'"
                 )
         finally:
             release_generic(f"cross_encoder:{self.model_name}")
@@ -229,6 +252,7 @@ class CrossEncoderRerankerComponent:
         "top_k": 10,
         "base_url": "http://localhost",
         "port": 8000,
+        "context_window": 0,
     },
 )
 def create_lela_vllm_api_client_reranker_component(
@@ -237,6 +261,7 @@ def create_lela_vllm_api_client_reranker_component(
     top_k: int,
     base_url: str,
     port: int,
+    context_window: int,
 ):
     """Factory for vLLM API client reranker component."""
     return VLLMAPIClientReranker(
@@ -244,6 +269,7 @@ def create_lela_vllm_api_client_reranker_component(
         top_k=top_k,
         base_url=base_url,
         port=port,
+        context_window=context_window,
     )
 
 
@@ -259,10 +285,12 @@ class VLLMAPIClientReranker:
         top_k: int = 10,
         base_url: str = "http://localhost",
         port: int = 8000,
+        context_window: int = 0,
     ):
         self.nlp = nlp
         self.top_k = top_k
         self.api_url = f"{base_url}:{port}/score"
+        self.context_window = context_window
         ensure_candidates_extension()
         logger.info(f"Using vLLM API reranker at {self.api_url}")
         self.progress_callback: Optional[ProgressCallback] = None
@@ -290,9 +318,9 @@ class VLLMAPIClientReranker:
             if not candidates:
                 continue
 
-            query = f"{doc.text[: ent.start_char]}{SPAN_OPEN}{ent.text}{SPAN_CLOSE}{doc.text[ent.end_char:]}"
+            marked_text = build_marked_text(doc, ent, self.context_window)
             query = self.QUERY_TEMPLATE.format(
-                prefix=self.PREFIX, instruction=RERANKER_TASK, query=query
+                prefix=self.PREFIX, instruction=RERANKER_TASK, query=marked_text
             )
 
             documents = [f"{c.entity_id} ({c.description or ''})" for c in candidates]
@@ -392,6 +420,7 @@ class NoOpRerankerComponent:
         "top_k": 10,
         "base_url": "http://localhost",
         "port": 8000,
+        "context_window": 0,
     },
 )
 def create_lela_llama_server_reranker_component(
@@ -401,6 +430,7 @@ def create_lela_llama_server_reranker_component(
     top_k: int,
     base_url: str,
     port: int,
+    context_window: int,
 ):
     """Factory for Llama Server reranker component."""
     return LlamaServerReranker(
@@ -409,6 +439,7 @@ def create_lela_llama_server_reranker_component(
         top_k=top_k,
         base_url=base_url,
         port=port,
+        context_window=context_window,
     )
 
 
@@ -425,11 +456,13 @@ class LlamaServerReranker:
         top_k: int = 10,
         base_url: str = "http://localhost",
         port: int = 8000,
+        context_window: int = 0,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
         self.api_url = f"{base_url}:{port}/v1/rerank"
+        self.context_window = context_window
         ensure_candidates_extension()
         logger.info(
             f"Using Llama Server reranker for model '{self.model_name}' at {self.api_url}"
@@ -459,7 +492,7 @@ class LlamaServerReranker:
             if not candidates:
                 continue
 
-            query_text = ent.text
+            query_text = build_marked_text(doc, ent, self.context_window)
             document_texts = [
                 f"{c.entity_id} ({c.description or ''})" for c in candidates
             ]
@@ -533,6 +566,7 @@ class LlamaServerReranker:
         "top_k": RERANKER_TOP_K,
         "device": None,
         "estimated_vram_gb": get_model_vram_gb(DEFAULT_EMBEDDER_MODEL),
+        "context_window": 0,
     },
 )
 def create_lela_embedder_transformers_reranker_component(
@@ -542,6 +576,7 @@ def create_lela_embedder_transformers_reranker_component(
     top_k: int,
     device: Optional[str],
     estimated_vram_gb: float,
+    context_window: int,
 ):
     """Factory for LELA embedder reranker component."""
     return LELAEmbedderRerankerComponent(
@@ -550,6 +585,7 @@ def create_lela_embedder_transformers_reranker_component(
         top_k=top_k,
         device=device,
         estimated_vram_gb=estimated_vram_gb,
+        context_window=context_window,
     )
 
 
@@ -571,12 +607,14 @@ class LELAEmbedderRerankerComponent:
         top_k: int = RERANKER_TOP_K,
         device: Optional[str] = None,
         estimated_vram_gb: Optional[float] = None,
+        context_window: int = 0,
     ):
         self.nlp = nlp
         self.model_name = model_name
         self.top_k = top_k
         self.device = device
         self.estimated_vram_gb = estimated_vram_gb if estimated_vram_gb is not None else get_model_vram_gb(model_name)
+        self.context_window = context_window
 
         ensure_candidates_extension()
 
@@ -588,11 +626,9 @@ class LELAEmbedderRerankerComponent:
         """Embed texts using the SentenceTransformer model."""
         return model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
 
-    def _format_query(self, text: str, start: int, end: int) -> str:
+    def _format_query(self, doc: Doc, ent: Span) -> str:
         """Format query with marked mention in text."""
-        marked_text = (
-            f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
-        )
+        marked_text = build_marked_text(doc, ent, self.context_window)
         return f"Instruct: {RERANKER_TASK}\nQuery: {marked_text}"
 
     def _format_candidate(self, candidate: Candidate) -> str:
@@ -603,7 +639,6 @@ class LELAEmbedderRerankerComponent:
 
     def __call__(self, doc: Doc) -> Doc:
         """Rerank candidates for all entities in the document."""
-        text = doc.text
         entities = list(doc.ents)
         num_entities = len(entities)
 
@@ -643,7 +678,7 @@ class LELAEmbedderRerankerComponent:
                 if not candidates or len(candidates) <= self.top_k:
                     continue
 
-                query_text = self._format_query(text, ent.start_char, ent.end_char)
+                query_text = self._format_query(doc, ent)
                 candidate_texts = [self._format_candidate(c) for c in candidates]
 
                 all_texts = [query_text] + candidate_texts
@@ -694,6 +729,7 @@ class LELAEmbedderRerankerComponent:
         "top_k": RERANKER_TOP_K,
         "gpu_memory_gb": None,
         "max_model_len": None,
+        "context_window": 0,
     },
 )
 def create_lela_cross_encoder_vllm_reranker_component(
@@ -703,6 +739,7 @@ def create_lela_cross_encoder_vllm_reranker_component(
     top_k: int,
     gpu_memory_gb: Optional[float],
     max_model_len: Optional[int],
+    context_window: int,
 ):
     """Factory for LELA cross-encoder vLLM reranker component."""
     return LELACrossEncoderVLLMRerankerComponent(
@@ -711,6 +748,7 @@ def create_lela_cross_encoder_vllm_reranker_component(
         top_k=top_k,
         gpu_memory_gb=gpu_memory_gb,
         max_model_len=max_model_len,
+        context_window=context_window,
     )
 
 
@@ -733,6 +771,7 @@ class LELACrossEncoderVLLMRerankerComponent:
         top_k: int = RERANKER_TOP_K,
         gpu_memory_gb: Optional[float] = None,
         max_model_len: Optional[int] = None,
+        context_window: int = 0,
     ):
         self.nlp = nlp
         self.model_name = model_name
@@ -740,6 +779,7 @@ class LELACrossEncoderVLLMRerankerComponent:
         self.gpu_memory_gb = gpu_memory_gb
         self.max_model_len = max_model_len
         self.gpu_memory_utilization = gb_to_vllm_fraction(gpu_memory_gb) if gpu_memory_gb is not None else None
+        self.context_window = context_window
 
         ensure_candidates_extension()
 
@@ -748,11 +788,9 @@ class LELACrossEncoderVLLMRerankerComponent:
 
         logger.info(f"LELA cross-encoder vLLM reranker initialized: {model_name}")
 
-    def _format_query(self, text: str, start: int, end: int) -> str:
+    def _format_query(self, doc: Doc, ent: Span) -> str:
         """Format query with marked mention in text."""
-        marked_text = (
-            f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
-        )
+        marked_text = build_marked_text(doc, ent, self.context_window)
         return self.QUERY_TEMPLATE.format(
             prefix=CROSS_ENCODER_PREFIX,
             instruction=RERANKER_TASK,
@@ -792,7 +830,6 @@ class LELACrossEncoderVLLMRerankerComponent:
 
     def __call__(self, doc: Doc) -> Doc:
         """Rerank candidates for all entities in the document."""
-        text = doc.text
         entities = list(doc.ents)
         num_entities = len(entities)
 
@@ -817,7 +854,7 @@ class LELACrossEncoderVLLMRerankerComponent:
                 if not candidates or len(candidates) <= self.top_k:
                     continue
 
-                query = self._format_query(text, ent.start_char, ent.end_char)
+                query = self._format_query(doc, ent)
                 documents = [self._format_document(c) for c in candidates]
 
                 work_items.append((i, candidates, len(documents)))
@@ -884,6 +921,7 @@ class LELACrossEncoderVLLMRerankerComponent:
         "top_k": RERANKER_TOP_K,
         "gpu_memory_gb": None,
         "max_model_len": None,
+        "context_window": 0,
     },
 )
 def create_lela_embedder_vllm_reranker_component(
@@ -893,6 +931,7 @@ def create_lela_embedder_vllm_reranker_component(
     top_k: int,
     gpu_memory_gb: Optional[float],
     max_model_len: Optional[int],
+    context_window: int,
 ):
     """Factory for LELA embedder vLLM reranker component."""
     return LELAEmbedderVLLMRerankerComponent(
@@ -901,6 +940,7 @@ def create_lela_embedder_vllm_reranker_component(
         top_k=top_k,
         gpu_memory_gb=gpu_memory_gb,
         max_model_len=max_model_len,
+        context_window=context_window,
     )
 
 
@@ -920,6 +960,7 @@ class LELAEmbedderVLLMRerankerComponent:
         top_k: int = RERANKER_TOP_K,
         gpu_memory_gb: Optional[float] = None,
         max_model_len: Optional[int] = None,
+        context_window: int = 0,
     ):
         self.nlp = nlp
         self.model_name = model_name
@@ -927,6 +968,7 @@ class LELAEmbedderVLLMRerankerComponent:
         self.gpu_memory_gb = gpu_memory_gb
         self.max_model_len = max_model_len
         self.gpu_memory_utilization = gb_to_vllm_fraction(gpu_memory_gb) if gpu_memory_gb is not None else None
+        self.context_window = context_window
 
         ensure_candidates_extension()
 
@@ -935,11 +977,9 @@ class LELAEmbedderVLLMRerankerComponent:
 
         logger.info(f"LELA embedder vLLM reranker initialized: {model_name}")
 
-    def _format_query(self, text: str, start: int, end: int) -> str:
+    def _format_query(self, doc: Doc, ent: Span) -> str:
         """Format query with marked mention in text."""
-        marked_text = (
-            f"{text[:start]}{SPAN_OPEN}{text[start:end]}{SPAN_CLOSE}{text[end:]}"
-        )
+        marked_text = build_marked_text(doc, ent, self.context_window)
         return f"Instruct: {RERANKER_TASK}\nQuery: {marked_text}"
 
     def _format_candidate(self, candidate: Candidate) -> str:
@@ -972,7 +1012,6 @@ class LELAEmbedderVLLMRerankerComponent:
 
     def __call__(self, doc: Doc) -> Doc:
         """Rerank candidates for all entities in the document."""
-        text = doc.text
         entities = list(doc.ents)
         num_entities = len(entities)
 
@@ -1001,7 +1040,7 @@ class LELAEmbedderVLLMRerankerComponent:
                 if not candidates or len(candidates) <= self.top_k:
                     continue
 
-                query_text = self._format_query(text, ent.start_char, ent.end_char)
+                query_text = self._format_query(doc, ent)
                 candidate_texts = [self._format_candidate(c) for c in candidates]
 
                 all_texts = [query_text] + candidate_texts

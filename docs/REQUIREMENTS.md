@@ -186,8 +186,8 @@ AutoTokenizer.from_pretrained("numind/NuNER_Zero-span")
 AutoModel.from_pretrained("dslim/bert-base-NER")
 AutoTokenizer.from_pretrained("dslim/bert-base-NER")
 
-# Download embedder models
-SentenceTransformer("all-MiniLM-L6-v2")
+# Download embedder models (default LELA embedder)
+SentenceTransformer("Qwen/Qwen3-Embedding-4B")
 
 # Download LLM for disambiguation
 AutoModel.from_pretrained("Qwen/Qwen3-4B", trust_remote_code=True)

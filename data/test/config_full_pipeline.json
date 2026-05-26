@@ -28,7 +28,7 @@
       "model_name": "Qwen/Qwen3-4B",
       "add_none_candidate": true,
       "add_descriptions": true,
-      "disable_thinking": false
+      "enable_thinking": true
     }
   },
   "cache_dir": ".ner_cache",

@@ -23,7 +23,7 @@
     "name": "transformers",
     "params": {
       "model_name": "Qwen/Qwen3-8B",
-      "disable_thinking": true,
+      "enable_thinking": false,
       "add_none_candidate": true
     }
   },

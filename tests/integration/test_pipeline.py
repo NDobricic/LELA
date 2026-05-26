@@ -212,7 +212,7 @@ class TestPipelineWithoutDisambiguator:
     ) -> dict:
         return {
             "loader": {"name": "text"},
-            "ner": {"name": "simple", "params": {"min_len": 3}},
+            "ner": {"name": "regex", "params": {"min_len": 3}},
             "candidate_generator": {"name": "fuzzy", "params": {"top_k": 5}},
             "knowledge_base": {"name": "jsonl", "params": {"path": temp_jsonl_kb}},
             "cache_dir": temp_cache_dir,
@@ -239,7 +239,7 @@ class TestPipelineConfiguration:
         """Test custom NER parameters."""
         config_dict = {
             "loader": {"name": "text"},
-            "ner": {"name": "simple", "params": {"min_len": 10}},  # High min_len
+            "ner": {"name": "regex", "params": {"min_len": 10}},  # High min_len
             "candidate_generator": {"name": "fuzzy", "params": {"top_k": 3}},
             "knowledge_base": {"name": "jsonl", "params": {"path": temp_jsonl_kb}},
             "cache_dir": temp_cache_dir,
@@ -258,7 +258,7 @@ class TestPipelineConfiguration:
         """Test custom candidate generation parameters."""
         config_dict = {
             "loader": {"name": "text"},
-            "ner": {"name": "simple", "params": {"min_len": 3}},
+            "ner": {"name": "regex", "params": {"min_len": 3}},
             "candidate_generator": {"name": "fuzzy", "params": {"top_k": 2}},
             "knowledge_base": {"name": "jsonl", "params": {"path": temp_jsonl_kb}},
             "cache_dir": temp_cache_dir,

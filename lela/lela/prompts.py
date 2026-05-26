@@ -20,40 +20,25 @@ def create_disambiguation_messages(
     query_prompt: Optional[str] = None,
     add_none_candidate: bool = True,
     add_descriptions: bool = True,
-    disable_thinking: bool = False,
 ) -> List[dict]:
     """
     Create message list for LLM disambiguation.
 
-    Args:
-        marked_text: Text with mention marked using [brackets]
-        candidates: List of Candidate objects
-        kb: Optional knowledge base for looking up entity titles
-        system_prompt: Optional custom system prompt
-        query_prompt: Optional additional query context
-        add_none_candidate: Whether to include "None" option
-        add_descriptions: Whether to include entity descriptions
-        disable_thinking: Whether to use a simpler prompt that asks for just a number
-
-    Returns:
-        List of message dicts for chat API
+    Thinking-mode control is handled at the chat-template level via
+    ``chat_template_kwargs={"enable_thinking": ...}`` by the caller, not here.
     """
     messages = []
 
-    # Use appropriate system prompt
     final_system_prompt = system_prompt if system_prompt else DEFAULT_SYSTEM_PROMPT
-
     messages.append({"role": "system", "content": final_system_prompt})
 
     if query_prompt:
         messages.append({"role": "user", "content": query_prompt})
 
-    # Build candidate list string
     none_option = "0. None of the listed candidates\n" if add_none_candidate else ""
 
     candidate_lines = []
     for i, candidate in enumerate(candidates):
-        # Get entity title from KB if available, otherwise use entity_id
         if kb:
             entity = kb.get_entity(candidate.entity_id)
             title = entity.title if entity else candidate.entity_id
@@ -70,11 +55,6 @@ def create_disambiguation_messages(
     user_message = (
         f"Input text: {marked_text}\nList of candidate entities:\n{candidate_str}"
     )
-
-    # Add /no_think soft switch for Qwen3 models when thinking is disabled
-    # This is a soft switch that Qwen3 recognizes to skip chain-of-thought
-    if disable_thinking:
-        user_message += " /no_think"
 
     messages.append({"role": "user", "content": user_message})
 

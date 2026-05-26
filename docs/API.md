@@ -152,7 +152,7 @@ lela = Lela("config.json")
 # From a dict
 lela = Lela({
     "loader": {"name": "text"},
-    "ner": {"name": "simple", "params": {"min_len": 3}},
+    "ner": {"name": "regex", "params": {"min_len": 3}},
     "candidate_generator": {"name": "fuzzy", "params": {"top_k": 10}},
     "reranker": {"name": "none"},
     "disambiguator": {"name": "first"},
@@ -351,10 +351,11 @@ vLLM-based LLM disambiguation - sends all candidates at once.
 | `max_model_len` | int | None | Max context length |
 | `add_none_candidate` | bool | True | Add "None" option for NIL linking |
 | `add_descriptions` | bool | True | Include descriptions |
-| `disable_thinking` | bool | True | Disable reasoning (adds `/no_think` for Qwen3) |
+| `enable_thinking` | bool \| None | None | Pass through to chat template; `None` = template default; auto-True for `gemma-4` models |
 | `system_prompt` | str | LELA default | Custom prompt |
 | `generation_config` | dict | {} | vLLM generation settings |
-| `self_consistency_k` | int | 1 | Voting samples (>1 enables majority voting) |
+| `self_consistency_k` | int | 1 | Voting samples (>1 enables majority voting; invalid answers are dropped before voting when `add_none_candidate=False`) |
+| `context_window` | int | 0 | Token window around mention; 0 = full doc |
 
 **Requires initialization:**
 ```python
@@ -374,9 +375,10 @@ Transformers-based LLM disambiguation (alternative to vLLM).
 | `model_name` | str | "Qwen/Qwen3-4B" | LLM model |
 | `add_none_candidate` | bool | True | Add "None" option for NIL linking |
 | `add_descriptions` | bool | True | Include descriptions |
-| `disable_thinking` | bool | True | Disable reasoning |
+| `enable_thinking` | bool \| None | None | Pass through to chat template; auto-True for `gemma-4` |
 | `system_prompt` | str | LELA default | Custom prompt |
 | `generation_config` | dict | {} | HuggingFace generation settings |
+| `context_window` | int | 0 | Token window around mention; 0 = full doc |
 
 **Requires initialization:**
 ```python
@@ -395,7 +397,7 @@ component.initialize(kb)
     "name": "transformers",
     "params": {
       "model_name": "Qwen/Qwen3-4B",
-      "disable_thinking": true
+      "enable_thinking": false
     }
   }
 }
@@ -485,7 +487,7 @@ candidate = Candidate(
 | Config Name | spaCy Factory |
 |-------------|---------------|
 | **NER** | |
-| `simple` | `simple_ner` |
+| `regex` | `simple_ner` |
 | `gliner` | `gliner_ner` |
 | `spacy` | Built-in NER + `ner_filter` |
 | **Candidate Generators** | |
@@ -697,9 +699,9 @@ for ent in doc.ents:
 
 ---
 
-### Qwen3 Thinking Mode
+### Thinking Mode
 
-Qwen3 models support a "thinking mode" where the model shows chain-of-thought reasoning. The pipeline can disable this for faster responses.
+Models that ship a "thinking mode" in their chat template (Qwen3, Gemma-4, etc.) emit chain-of-thought reasoning before the final answer. LELA forwards `enable_thinking` to `tokenizer.apply_chat_template(..., chat_template_kwargs={"enable_thinking": ...})` — the same mechanism vLLM / HuggingFace expose. Works the same for any model whose template understands the flag.
 
 **Configuration:**
 ```json
@@ -707,34 +709,21 @@ Qwen3 models support a "thinking mode" where the model shows chain-of-thought re
   "disambiguator": {
     "name": "vllm",
     "params": {
-      "disable_thinking": true  // Skip chain-of-thought reasoning
+      "enable_thinking": false   // false = skip thinking; true = force on; omit = template default
     }
   }
 }
 ```
 
-**How it works:**
+**Tri-state semantics (`enable_thinking`):**
 
-When `disable_thinking=true`:
-- The prompt ends with the `/no_think` soft switch token
-- Qwen3 models recognize this and output the answer directly
-- Reduces token usage and latency significantly
+| Value | Effect |
+|-------|--------|
+| `true` | Force thinking on (more tokens, often better accuracy) |
+| `false` | Force thinking off (faster, fewer tokens) |
+| `null` / omit | Use the chat template's default. Auto-resolves to `true` for `gemma-4*` models (their template requires it) |
 
-**With thinking (default for some prompts):**
-```
-<think>
-The mention "Paris" in the context about Olympics in France clearly
-refers to the capital city, not the novel or the Texas city...
-</think>
-answer: 1
-```
-
-**Without thinking (`disable_thinking=true`):**
-```
-1
-```
-
-**Note:** The transformers disambiguator also handles `</think>` tags in the output when parsing, so it works correctly even if the model includes thinking.
+**Parser:** LELA looks for `answer ...: N` first, then falls back to the last number on the last non-empty line. Models are expected to emit the final `answer: N` once at the end of the response — this holds for Qwen3 and Gemma-4 with thinking on or off.
 
 ---
 

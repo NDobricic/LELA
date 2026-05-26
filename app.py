@@ -8,7 +8,15 @@ import threading
 from pathlib import Path
 from typing import Dict, Generator, List, Optional, Tuple
 
-import gradio as gr
+try:
+    import gradio as gr
+except ImportError as e:
+    raise ImportError(
+        "The LELA web UI requires gradio. Install it with:\n"
+        "    pip install \"lela[ui]\"\n"
+        "or with uv:\n"
+        "    uv sync --extra ui"
+    ) from e
 import torch
 
 # Global cancellation event for cooperative cancellation
@@ -89,7 +97,7 @@ def get_available_components() -> Dict[str, List[str]]:
 
     return {
         "loaders": ["text", "pdf", "docx", "html", "json", "jsonl"],
-        "ner": ["simple", "spacy", "gliner"],
+        "ner": ["regex", "spacy", "gliner"],
         "candidates": ["none", "fuzzy", "bm25", "dense", "openai_api_dense"],
         "rerankers": [
             "none",
@@ -669,7 +677,7 @@ def run_pipeline(
             ner_params["labels"] = [l.strip() for l in gliner_labels.split(",")]
         if labels_from_kb:
             ner_params["labels_from_kb"] = True
-    elif ner_type == "simple":
+    elif ner_type == "regex":
         ner_params["min_len"] = simple_min_len
 
     # Build candidate params
@@ -706,7 +714,7 @@ def run_pipeline(
     disambig_params = {}
     if disambig_type in ("vllm", "transformers"):
         disambig_params["model_name"] = llm_model
-        disambig_params["disable_thinking"] = not thinking
+        disambig_params["enable_thinking"] = thinking
         disambig_params["add_none_candidate"] = none_candidate
     if disambig_type == "vllm":
         disambig_params["gpu_memory_gb"] = disambig_gpu_mem_gb
@@ -926,7 +934,7 @@ def update_ner_params(ner_choice: str):
     return {
         spacy_params: gr.update(visible=(ner_choice == "spacy")),
         gliner_params: gr.update(visible=show_gliner),
-        simple_params: gr.update(visible=(ner_choice == "simple")),
+        simple_params: gr.update(visible=(ner_choice == "regex")),
         ner_vram_info: gr.update(visible=show_gliner, value=vram_text),
     }
 
@@ -1518,7 +1526,7 @@ if __name__ == "__main__":
                     gr.Markdown("**NER**", elem_classes=["pipeline-col-header"])
                     ner_type = gr.Dropdown(
                         choices=components["ner"],
-                        value="simple",
+                        value="regex",
                         label="Model",
                         container=False,
 
@@ -1774,7 +1782,7 @@ if __name__ == "__main__":
                     ner_params["labels"] = [l.strip() for l in gliner_l.split(",")]
                 if lbl_from_kb:
                     ner_params["labels_from_kb"] = True
-            elif ner_t == "simple":
+            elif ner_t == "regex":
                 ner_params["min_len"] = simple_ml
 
             # Candidate params
@@ -1805,7 +1813,7 @@ if __name__ == "__main__":
             disambig_params = {}
             if disambig_t in ("vllm", "transformers"):
                 disambig_params["model_name"] = llm_m
-                disambig_params["disable_thinking"] = not thinking
+                disambig_params["enable_thinking"] = thinking
                 disambig_params["add_none_candidate"] = none_cand
             if disambig_t == "vllm":
                 disambig_params["gpu_memory_gb"] = disambig_gpu
