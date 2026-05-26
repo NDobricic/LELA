@@ -4,10 +4,34 @@ This guide provides solutions for common issues encountered when installing and 
 
 ## Table of Contents
 
+- [Platform Support](#platform-support)
 - [Installation Issues](#installation-issues)
 - [Runtime Errors](#runtime-errors)
 - [GPU and Memory Issues](#gpu-and-memory-issues)
 - [Debugging Guide](#debugging-guide)
+
+---
+
+## Platform Support
+
+| Platform | Core (`uv sync`) | `[ui]` extra | `[vllm]` extra |
+|---|---|---|---|
+| Linux (CUDA 12.x) | ✅ | ✅ | ✅ |
+| macOS (Apple Silicon / Intel) | ✅ | ✅ | ❌ (use `openai_api` disambiguator instead) |
+| Windows native | ⚠️ untested | ⚠️ untested | ❌ vLLM has no Windows wheels |
+| Windows WSL2 | ✅ (treated as Linux) | ✅ | ✅ |
+
+**Windows native is not officially supported.** If you must use Windows, run LELA inside WSL2 — the project is developed and tested on Linux, and WSL2 inherits Linux behavior including CUDA.
+
+**vLLM stale JIT cache (after switching Python versions):**
+
+If you previously synced the venv on a different Python version (e.g. 3.12) and now run on 3.13, vLLM's flashinfer JIT cache can hold absolute paths into the old `site-packages/` and fail with a ninja build error referencing a missing `.cu` file. Fix:
+
+```bash
+rm -rf ~/.cache/flashinfer/
+```
+
+Then re-run; flashinfer will JIT-compile fresh against the current interpreter.
 
 ---
 
