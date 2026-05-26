@@ -6,6 +6,11 @@ Standalone, swappable NER → candidate generation → rerank → disambiguation
 
 **Requirements:** Python >=3.10. GPU + CUDA 12.x only required for the `vllm` extra (local LLM disambiguation/reranking).
 
+**Platform support:**
+- **Linux** — fully supported, including the `vllm` extra.
+- **macOS** — core + `ui` extra supported. `vllm` is not available; use `openai_api` disambiguator pointing at a remote server (or the `transformers` disambiguator for small models on CPU).
+- **Windows** — not officially tested, WSL2 is the recommended workaround.
+
 ### With `uv` (recommended)
 
 ```bash
@@ -132,11 +137,23 @@ If you omit the `knowledge_base` block entirely, LELA auto-downloads the YAGO 4.
 - Disambiguators: `first`, `vllm`, `transformers`, `openai_api`
 - Knowledge bases: `jsonl` (YAGO 4.5 auto-downloads when no `knowledge_base` block is set)
 
-## Sample configs
-- `config/quickstart.json` — zero-config, CPU-only, YAGO auto-download (see Quick start above).
-- `config/lela_example.json` — full pipeline (GLiNER + dense + cross-encoder + vLLM).
-- `config/lela_bm25_only.json` — minimal BM25-only setup.
-- `config/test_gliner_fuzzy_ce_transformers.json` — uses `transformers` disambiguator (no vLLM).
+## Recommended configurations
+
+Pick a row that matches your hardware and quality target. All four configs live in `config/` and can be used with the CLI directly (e.g. `python -m lela.cli --config config/quickstart.json --input docs/file1.txt`).
+
+| Use case | NER | Candidates | Reranker | Disambiguator | Hardware | Config |
+|---|---|---|---|---|---|---|
+| **Fast / instant demo** | `regex` | `fuzzy` | none | `first` | CPU only | [`config/quickstart.json`](config/quickstart.json) |
+| **Better NER, still CPU** | `gliner` | `bm25` | none | `first` | CPU (gliner is small) | [`config/lela_bm25_only.json`](config/lela_bm25_only.json) |
+| **No vLLM, local LLM** | `gliner` | `fuzzy` | `cross_encoder` | `transformers` | 1× GPU (~10 GB) | [`config/test_gliner_fuzzy_ce_transformers.json`](config/test_gliner_fuzzy_ce_transformers.json) |
+| **Best quality** | `gliner` | `bm25` (+context) | `embedder_transformers` | `vllm` (Qwen3-4B) | 1× GPU (~20 GB) | [`config/lela_example.json`](config/lela_example.json) |
+| **API-only (no local GPU)** | `gliner` | `bm25` | none | `openai_api` | CPU + remote LLM | build your own — see `docs/API.md` |
+
+Rough quality / cost trade-off:
+- `regex + fuzzy + first` works perfectly when mentions are canonical entity titles (e.g. "Albert Einstein"), and fails on ambiguous mentions (e.g. "Paris").
+- Adding `gliner` improves NER quality on noisy/typed text.
+- Adding a `dense` or `cross_encoder` reranker is the biggest quality jump when the KB is large (BM25/fuzzy top-1 isn't great by itself).
+- An LLM disambiguator (`vllm`, `transformers`, or `openai_api`) handles ambiguity from context — but costs the most.
 
 ## Conversion utilities
 - YAGO labels TSV → JSONL KB:
