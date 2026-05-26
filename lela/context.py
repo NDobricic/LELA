@@ -7,6 +7,26 @@ which improves disambiguation accuracy.
 import re
 from typing import Optional
 
+from spacy.tokens import Doc, Span
+
+from lela.lela.config import SPAN_OPEN, SPAN_CLOSE
+
+
+def build_marked_text(doc: Doc, ent: Span, context_window: int = 0) -> str:
+    """Return the mention marked with SPAN_OPEN/SPAN_CLOSE, optionally cropped
+    to ``context_window`` tokens (half on each side). 0 / negative = full doc.
+    """
+    if not context_window or context_window <= 0:
+        text = doc.text
+        return f"{text[:ent.start_char]}{SPAN_OPEN}{ent.text}{SPAN_CLOSE}{text[ent.end_char:]}"
+
+    half = context_window // 2
+    left = max(0, ent.start - half)
+    right = min(len(doc), ent.end + half)
+    left_text = doc[left : ent.start].text
+    right_text = doc[ent.end : right].text
+    return f"{left_text} {SPAN_OPEN}{ent.text}{SPAN_CLOSE} {right_text}".strip()
+
 
 def extract_sentence_context(
     text: str,

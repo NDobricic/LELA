@@ -282,7 +282,7 @@ disamb = nlp.add_pipe("vllm_disambiguator", config={
     "tensor_parallel_size": 1,
     "add_none_candidate": True,
     "add_descriptions": True,
-    "disable_thinking": True,
+    "enable_thinking": False,
     "self_consistency_k": 1
 })
 disamb.initialize(kb)
@@ -297,7 +297,7 @@ disamb.initialize(kb)
     "tensor_parallel_size": 1,
     "add_none_candidate": true,
     "add_descriptions": true,
-    "disable_thinking": true,
+    "enable_thinking": false,
     "self_consistency_k": 1
   }
 }
@@ -319,7 +319,7 @@ disamb = nlp.add_pipe("transformers_disambiguator", config={
     "model_name": "Qwen/Qwen3-4B",
     "add_none_candidate": True,
     "add_descriptions": True,
-    "disable_thinking": True
+    "enable_thinking": False
 })
 disamb.initialize(kb)
 ```
@@ -332,7 +332,7 @@ disamb.initialize(kb)
     "model_name": "Qwen/Qwen3-4B",
     "add_none_candidate": true,
     "add_descriptions": true,
-    "disable_thinking": true
+    "enable_thinking": false
   }
 }
 ```
@@ -394,7 +394,7 @@ LELA components use the `jsonl` knowledge base.
       "tensor_parallel_size": 1,
       "add_none_candidate": true,
       "add_descriptions": true,
-      "disable_thinking": true
+      "enable_thinking": false
     }
   },
   "knowledge_base": {

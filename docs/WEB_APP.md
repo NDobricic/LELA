@@ -136,15 +136,10 @@ Each NER option maps to a spaCy pipeline factory:
 
 #### GLiNER
 - **spaCy Factory:** `gliner_ner`
-- **model_name**: GLiNER model (default: `urchade/gliner_large`)
-- **labels**: Comma-separated entity labels to detect
-- Zero-shot NER with custom labels
-
-#### LELA GLiNER
-- **spaCy Factory:** `chunked_gliner_ner`
-- **model_name**: Default `numind/NuNER_Zero-span`
-- **labels**: LELA default labels (person, organization, location)
+- **model_name**: GLiNER model (default: `numind/NuNER_Zero-span`)
+- **labels**: Comma-separated entity labels to detect (default: `person, organization, location`)
 - **threshold**: Detection threshold (default: 0.5)
+- Zero-shot NER with custom labels
 
 ### Candidate Generation Options
 
@@ -160,23 +155,17 @@ Each NER option maps to a spaCy pipeline factory:
 
 #### Dense
 - **spaCy Factory:** `dense_candidates`
-- **model_name**: Embedding model (default: `all-MiniLM-L6-v2`)
-- **top_k**: Number of candidates
+- **model_name**: Embedding model. Available from the dropdown:
+  - Qwen3-Embed-0.6B (~1.5GB VRAM)
+  - Qwen3-Embed-4B (~9.5GB VRAM, default)
+- **top_k**: Number of candidates (1-100, default: 64)
+- **use_context**: When true, includes the mention's sentence in the query (improves disambiguation of ambiguous mentions)
 - Uses FAISS for similarity search
 
-#### LELA BM25
-- **spaCy Factory:** `bm25_candidates`
-- **top_k**: Number of candidates (default: 20)
-- Uses rank-bm25 for keyword-based retrieval
-
-#### LELA Dense
-- **spaCy Factory:** `dense_candidates`
-- **Embedding Model**: Selectable from dropdown:
-  - MiniLM-L6 (~0.3GB VRAM)
-  - BGE-Base (~0.5GB VRAM)
-  - Qwen3-Embed-0.6B (~2GB VRAM)
-  - Qwen3-Embed-4B (~9GB VRAM)
-- **top_k**: Number of candidates
+#### OpenAI-API Dense
+- **spaCy Factory:** `openai_api_dense_candidates`
+- Same as Dense, but embeds via an OpenAI-compatible API endpoint instead of running the model locally.
+- **base_url** / **api_key**: API endpoint configuration.
 - **use_context**: Include mention context in query
 - Uses SentenceTransformer for local embedding computation
 
@@ -215,25 +204,29 @@ Each NER option maps to a spaCy pipeline factory:
 
 ### Disambiguation Options
 
-#### None
-- No disambiguation, returns candidates without selection
-
 #### First
 - **spaCy Factory:** `first_disambiguator`
-- Selects the first candidate from the list
+- Selects the first candidate from the list (after reranking if any).
+- No model — pure logic, zero cost.
 
-#### LELA vLLM
+#### vLLM
 - **spaCy Factory:** `vllm_disambiguator`
-- **LLM Model**: Same model choices as LELA vLLM
-- **Context Length (`max_model_len`)**: Slider (512-32768, default 4096)
-- Sends all candidates at once (simpler, faster for small candidate sets)
-- Uses vLLM for fast batched inference
+- **LLM Model**: dropdown of `AVAILABLE_LLM_MODELS` (Qwen3-0.6B / 1.7B / 4B / 8B / 14B, Gemma-4-E2B / E4B).
+- **Context Length (`max_model_len`)**: 512-32768, default 4096.
+- **Enable Thinking**: tri-state checkbox; auto-defaults to True for `gemma-4*`. Forwarded to `apply_chat_template(..., chat_template_kwargs={"enable_thinking": ...})`.
+- **Self-Consistency K**: number of samples for majority voting.
+- **Context Window**: tokens around the mention; 0 = full doc.
+- Uses vLLM for batched local LLM inference. Requires the `vllm` extra.
 
-#### LELA Transformers
+#### Transformers
 - **spaCy Factory:** `transformers_disambiguator`
-- **LLM Model**: Same model choices as above
-- Alternative to vLLM-based disambiguator
-- Uses HuggingFace transformers directly
+- Same options as vLLM (LLM Model, Enable Thinking, Context Window).
+- Uses HuggingFace transformers directly — slower but no vLLM dependency.
+
+#### OpenAI API
+- **spaCy Factory:** `openai_api_disambiguator`
+- **base_url** / **api_key** / **model_name**: any OpenAI-compatible chat completions endpoint.
+- Same disambiguation logic as vLLM, but the LLM runs remotely. No GPU required locally.
 
 ## Using the Interface
 
@@ -268,8 +261,8 @@ Each NER option maps to a spaCy pipeline factory:
 ### Default Configuration
 
 The interface starts with sensible defaults:
-- **NER**: Simple (min_len: 3)
-- **Candidate Generator**: Fuzzy (top_k: 10)
+- **NER**: Regex (min_len: 3)
+- **Candidate Generator**: Fuzzy (top_k: 64)
 - **Reranker**: None
 - **Disambiguator**: First
 

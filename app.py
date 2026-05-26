@@ -8,7 +8,15 @@ import threading
 from pathlib import Path
 from typing import Dict, Generator, List, Optional, Tuple
 
-import gradio as gr
+try:
+    import gradio as gr
+except ImportError as e:
+    raise ImportError(
+        "The LELA web UI requires gradio. Install it with:\n"
+        "    pip install \"lela[ui]\"\n"
+        "or with uv:\n"
+        "    uv sync --extra ui"
+    ) from e
 import torch
 
 # Global cancellation event for cooperative cancellation

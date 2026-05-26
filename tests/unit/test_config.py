@@ -44,7 +44,7 @@ class TestPipelineConfig:
             "ner": {"name": "spacy", "params": {"model": "en_core_web_sm"}},
             "candidate_generator": {"name": "dense", "params": {"top_k": 10}},
             "reranker": {"name": "cross_encoder", "params": {}},
-            "disambiguator": {"name": "popularity", "params": {}},
+            "disambiguator": {"name": "first", "params": {}},
             "knowledge_base": {"name": "jsonl", "params": {"path": "/path/to/kb.jsonl"}},
             "cache_dir": "/tmp/cache",
             "batch_size": 4,
@@ -56,7 +56,7 @@ class TestPipelineConfig:
         assert config.candidate_generator.name == "dense"
         assert config.candidate_generator.params["top_k"] == 10
         assert config.reranker.name == "cross_encoder"
-        assert config.disambiguator.name == "popularity"
+        assert config.disambiguator.name == "first"
         assert config.knowledge_base.name == "jsonl"
         assert config.cache_dir == "/tmp/cache"
         assert config.batch_size == 4
