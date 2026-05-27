@@ -116,9 +116,16 @@ Pick a row that matches your hardware and quality target. All four configs live 
 |---|---|---|---|---|---|---|
 | **Fast / instant demo** | `regex` | `fuzzy` | none | `first` | CPU only | [`config/quickstart.json`](config/quickstart.json) |
 | **Better NER, still CPU** | `gliner` | `bm25` | none | `first` | CPU | [`config/lela_bm25_only.json`](config/lela_bm25_only.json) |
-| **No vLLM, local LLM** | `gliner` | `fuzzy` | `cross_encoder` | `transformers` | 1× GPU (~10 GB) | [`config/test_gliner_fuzzy_ce_transformers.json`](config/test_gliner_fuzzy_ce_transformers.json) |
-| **Best quality** | `gliner` | `bm25` | `embedder_transformers` | `vllm` (Qwen3-4B) | 1× GPU (~20 GB) | [`config/lela_example.json`](config/lela_example.json) |
+| **Strong, no LLM** | `gliner` | `dense` (0.6B) | `cross_encoder` (0.6B) | `first` | CPU works; 1× GPU much faster | [`config/lela_strong_cpu.json`](config/lela_strong_cpu.json) |
+| **Strong + LLM via llama.cpp** | `gliner` | `dense` (0.6B) | `cross_encoder` (0.6B) | `openai_api` → `llama-server` | CPU only (quantized model) | [`config/lela_strong_llamacpp.json`](config/lela_strong_llamacpp.json) |
+| **Best quality** | `gliner` | `dense` (4B, +context) | `cross_encoder` (4B) | `vllm` (Qwen3-4B) | 1× GPU (~24+ GB) | [`config/lela_example.json`](config/lela_example.json) |
 | **API-only (no local GPU)** | `gliner` | `bm25` | none | `openai_api` | CPU + remote LLM | build your own — see [`docs/API.md`](docs/API.md) |
+
+> **Running with llama.cpp:** the `lela_strong_llamacpp.json` config expects `llama-server` (from [llama.cpp](https://github.com/ggml-org/llama.cpp)) to be running locally on port 8080. Start it before LELA, e.g.:
+> ```bash
+> llama-server -m models/Qwen3-4B-Instruct-Q4_K_M.gguf -c 8192 --port 8080
+> ```
+> The same config also works against any other OpenAI-compatible endpoint (Ollama, vLLM-as-server, Together, etc.) — just edit `base_url` and `model_name`.
 
 Rough quality / cost trade-off:
 - `regex + fuzzy + first` works perfectly when mentions are canonical entity titles (e.g. "Albert Einstein"), and fails on ambiguous mentions.
