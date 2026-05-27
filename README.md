@@ -266,7 +266,7 @@ If you use LELA in your research, please cite:
   author    = {Samy Haffoudhi , Nikola Dobričić , Fabian Suchanek , Nils Holzenberger},
   booktitle = {35th International Joint Conference on Artificial Intelligence (IJCAI-ECAI 2026)},
   year      = {2026},
-  url       = {https://hal.science/hal-05633154}
+  url       = {https://arxiv.org/abs/2605.26956}
 }
 ```
 
