@@ -17,15 +17,14 @@
 
 ## Why LELA
 
-Entity linking — turning "Albert Einstein" in a sentence into a precise knowledge-base record — usually means stitching together five different tools and praying their I/O matches. **LELA replaces that with a single config file.** Five swappable stages (loader → NER → candidate generation → reranking → disambiguation) plus a pluggable knowledge base, all wired into one Python class or one CLI call.
+Entity linking — finding and mapping mentions in text to their corresponding entities in a Knowledge Base — usually means stitching together different tools that are often limited to linking to Wikipedia. **LELA replaces that with a single config file.** Five swappable stages (loader → NER → candidate generation → reranking → disambiguation) plus a pluggable knowledge base, all wired into one Python class or one CLI call.
 
 ```text
   ┌────────┐   ┌──────┐   ┌────────────┐   ┌──────────┐   ┌──────────────┐   ┌──────────┐
   │  text  │ → │ NER  │ → │ candidates │ → │ reranker │ → │ disambiguator│ → │ entities │
   └────────┘   └──────┘   └────────────┘   └──────────┘   └──────────────┘   └──────────┘
                               ▲                                  ▲
-                              └─── knowledge base (YAGO 4.5) ────┘
-                                   auto-downloads if you omit it
+                              └─── knowledge base (Custom / YAGO 4.5) ────┘
 ```
 
 **Highlights**
@@ -58,7 +57,7 @@ This runs on CPU with **no model downloads**. The first invocation fetches YAGO 
 {"text": "Marie Curie",     "entity_id": "yago:Marie_Curie",     ...}
 ```
 
-For ambiguous mentions ("Paris", "Apple") you'll want a heavier config — see the [recommended configurations](#recommended-configurations) below.
+For ambiguous mentions you'll want a heavier config — see the [recommended configurations](#recommended-configurations) below.
 
 ---
 
@@ -122,10 +121,10 @@ Pick a row that matches your hardware and quality target. All four configs live 
 | **API-only (no local GPU)** | `gliner` | `bm25` | none | `openai_api` | CPU + remote LLM | build your own — see [`docs/API.md`](docs/API.md) |
 
 Rough quality / cost trade-off:
-- `regex + fuzzy + first` works perfectly when mentions are canonical entity titles (e.g. "Albert Einstein"), and fails on ambiguous mentions (e.g. "Paris").
-- Adding `gliner` improves NER quality on noisy/typed text.
+- `regex + fuzzy + first` works perfectly when mentions are canonical entity titles (e.g. "Albert Einstein"), and fails on ambiguous mentions.
+- Adding `gliner` improves NER quality on noisy/typed text and supports custom entity labels.
 - Adding a `dense` or `cross_encoder` reranker is the biggest quality jump when the KB is large (BM25/fuzzy top-1 isn't great by itself).
-- An LLM disambiguator (`vllm`, `transformers`, or `openai_api`) handles ambiguity from context — but costs the most.
+- An LLM disambiguator (`vllm`, `transformers`, or `openai_api`) handles ambiguity from context through LLM-based reasoning — but costs the most.
 
 ---
 
