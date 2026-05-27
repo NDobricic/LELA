@@ -84,9 +84,10 @@ def _maybe_print_minimal_config_hint(config: PipelineConfig) -> None:
         "(regex NER + fuzzy candidates + first-pick disambiguator).\n"
         "This is great for canonical mentions like 'Albert Einstein' but will\n"
         "struggle with ambiguous mentions. For better results, try:\n"
-        "  - config/lela_bm25_only.json          (GLiNER + BM25, still CPU)\n"
-        "  - config/test_gliner_fuzzy_ce_transformers.json   (+ cross-encoder + LLM, 1 GPU)\n"
-        "  - config/lela_example.json            (full pipeline with vLLM, best quality)\n"
+        "  - config/lela_bm25_only.json        (GLiNER + BM25, still CPU)\n"
+        "  - config/lela_strong_cpu.json       (GLiNER + dense + cross-encoder, no LLM)\n"
+        "  - config/lela_strong_llamacpp.json  (the above + a local llama.cpp LLM)\n"
+        "  - config/lela_example.json          (full pipeline with vLLM, best quality)\n"
         "See the 'Recommended configurations' section of the README for a full overview.\n",
         file=sys.stderr,
         flush=True,

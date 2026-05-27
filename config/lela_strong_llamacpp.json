@@ -11,23 +11,22 @@
   "candidate_generator": {
     "name": "dense",
     "params": {
-      "model_name": "Qwen/Qwen3-Embedding-4B",
-      "top_k": 64,
-      "use_context": true
+      "model_name": "Qwen/Qwen3-Embedding-0.6B",
+      "top_k": 64
     }
   },
   "reranker": {
     "name": "cross_encoder",
     "params": {
-      "model_name": "tomaarsen/Qwen3-Reranker-4B-seq-cls",
+      "model_name": "tomaarsen/Qwen3-Reranker-0.6B-seq-cls",
       "top_k": 10
     }
   },
   "disambiguator": {
-    "name": "vllm",
+    "name": "openai_api",
     "params": {
-      "model_name": "Qwen/Qwen3-4B",
-      "tensor_parallel_size": 1,
+      "base_url": "http://localhost:8080/v1",
+      "model_name": "qwen3-4b",
       "add_none_candidate": true,
       "add_descriptions": true,
       "enable_thinking": false
