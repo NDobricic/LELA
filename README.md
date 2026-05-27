@@ -272,10 +272,10 @@ If you use LELA in your research, please cite:
 
 ## Authors
 
-- **Samy Haffoudhi** — [@samyhaff](https://samyhaff.github.io/)
-- **Nikola Dobričić** — [@nikoladobricic](https://github.com/NDobricic)
-- **Fabian Suchanek** — [@fabian_suchanek](https://suchanek.name/)
-- **Nils Holzenberger** — [@nils_holzenberger](https://perso.telecom-paristech.fr/holzenberger/)
+- [Samy Haffoudhi](https://samyhaff.github.io/)
+- [Nikola Dobričić](https://github.com/NDobricic)
+- [Fabian Suchanek](https://suchanek.name/)
+- [Nils Holzenberger](https://perso.telecom-paristech.fr/holzenberger/)
 
 ## Acknowledgements
 
