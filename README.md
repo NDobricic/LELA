@@ -1,17 +1,84 @@
+<div align="center">
+
 # LELA
 
-Standalone, swappable NER → candidate generation → rerank → disambiguation pipeline. Uses file-based storage (JSONL for KB and outputs) and optional caching in `.ner_cache/`.
+**A modular, end-to-end entity-linking pipeline.**
+
+*Find entities in text → match them to a knowledge base → swap any stage with one line of JSON.*
+
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-≥3.10-blue.svg)](https://www.python.org)
+[![Conference](https://img.shields.io/badge/IJCAI--ECAI-2026_Demo-orange)](https://2026.ijcai.org)
+[![YAGO Ecosystem](https://img.shields.io/badge/part_of-YAGO_ecosystem-yellow)](https://yago-knowledge.org)
+
+</div>
+
+---
+
+## Why LELA
+
+Entity linking — turning "Albert Einstein" in a sentence into a precise knowledge-base record — usually means stitching together five different tools and praying their I/O matches. **LELA replaces that with a single config file.** Five swappable stages (loader → NER → candidate generation → reranking → disambiguation) plus a pluggable knowledge base, all wired into one Python class or one CLI call.
+
+```text
+  ┌────────┐   ┌──────┐   ┌────────────┐   ┌──────────┐   ┌──────────────┐   ┌──────────┐
+  │  text  │ → │ NER  │ → │ candidates │ → │ reranker │ → │ disambiguator│ → │ entities │
+  └────────┘   └──────┘   └────────────┘   └──────────┘   └──────────────┘   └──────────┘
+                              ▲                                  ▲
+                              └─── knowledge base (YAGO 4.5) ────┘
+                                   auto-downloads if you omit it
+```
+
+**Highlights**
+
+- **Zero-config quickstart** — `git clone && uv sync && uv run python -m lela.cli ...` works on CPU with no model downloads. YAGO 4.5 fetches itself on first use.
+- **Bring your own KB** — any JSONL file with `id`, `title`, `description` plugs straight in.
+- **Mix and match** — regex/spaCy/GLiNER for NER, BM25/fuzzy/dense for candidates, cross-encoder/embedder rerankers, and vLLM / Hugging Face Transformers / OpenAI-compatible API disambiguators.
+- **Two interfaces** — Python API for embedding into your workflows, a Gradio web UI for hands-on exploration.
+- **CPU-friendly defaults, GPU when you need it** — vLLM is an optional extra; everything else runs on a laptop.
+
+---
+
+## Quickstart
+
+```bash
+git clone https://github.com/<your-org>/lela.git
+cd lela
+uv sync
+uv run python -m lela.cli \
+  --config config/quickstart.json \
+  --input data/test/sample_doc.txt \
+  --output outputs.jsonl
+```
+
+This runs on CPU with **no model downloads**. The first invocation fetches YAGO 4.5 (a few hundred MB; one-time, cached under `.ner_cache/`). On the sample document `"Albert Einstein was born in Germany. Marie Curie was a pioneering scientist."` you should see:
+
+```jsonl
+{"text": "Albert Einstein", "entity_id": "yago:Albert_Einstein", ...}
+{"text": "Germany",         "entity_id": "yago:Germany",         ...}
+{"text": "Marie Curie",     "entity_id": "yago:Marie_Curie",     ...}
+```
+
+For ambiguous mentions ("Paris", "Apple") you'll want a heavier config — see the [recommended configurations](#recommended-configurations) below.
+
+---
 
 ## Install
 
-**Requirements:** Python >=3.10. GPU + CUDA 12.x only required for the `vllm` extra (local LLM disambiguation/reranking).
+**Requirements:** Python ≥3.10. GPU + CUDA 12.x only required for the `vllm` extra (local LLM disambiguation/reranking).
 
 **Platform support:**
 - **Linux** — fully supported, including the `vllm` extra.
 - **macOS** — core + `ui` extra supported. `vllm` is not available; use `openai_api` disambiguator pointing at a remote server (or the `transformers` disambiguator for small models on CPU).
-- **Windows** — not officially tested, WSL2 is the recommended workaround.
+- **Windows** — not officially tested; WSL2 is the recommended workaround.
 
-### With `uv` (recommended)
+First, clone the repo:
+
+```bash
+git clone https://github.com/<your-org>/lela.git
+cd lela
+```
+
+### With `uv` (recommended on Linux/macOS)
 
 ```bash
 uv sync                            # CLI + library only (CPU-friendly)
@@ -22,70 +89,57 @@ uv sync --all-extras               # everything
 
 Then prefix commands with `uv run` (e.g. `uv run python -m lela.cli ...`) — no need to activate the venv manually.
 
+> **Windows users:** `uv` workflows aren't tested on native Windows. Use the `pip` path below from a regular PowerShell / Command Prompt, or run everything inside WSL2 (where `uv` works as on Linux).
+
 ### With `pip`
 
 ```bash
 python3.10 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -e .                   # core
-pip install -e ".[ui]"             # + web UI
-pip install -e ".[vllm]"           # + local vLLM
-pip install -e ".[ui,vllm]"        # both
+source .venv/bin/activate          # Linux/macOS
+# .venv\Scripts\activate           # Windows (PowerShell / cmd)
+
+python -m pip install --upgrade pip
+python -m pip install -e .                  # core
+python -m pip install -e ".[ui]"            # + web UI
+python -m pip install -e ".[vllm]"          # + local vLLM (Linux only)
+python -m pip install -e ".[ui,vllm]"       # both
 ```
 
-A pinned core-only `requirements.txt` is also provided for environments where `pip install -e .` doesn't fit; install extras separately with `pip install gradio` / `pip install "vllm>=0.19.0"`.
+A pinned core-only `requirements.txt` is also provided for environments where `pip install -e .` doesn't fit; install extras separately with `python -m pip install gradio` / `python -m pip install "vllm>=0.19.0"`.
 
-## Quick start
+---
 
-### Web UI (Gradio)
-Requires the `ui` extra (see Install above). Launch:
-```bash
-uv run python app.py        # or: python app.py
-```
-Open `http://localhost:7860` and configure the pipeline through the UI. See [docs/WEB_APP.md](docs/WEB_APP.md) for details.
+## Recommended configurations
 
-### Troubleshooting
+Pick a row that matches your hardware and quality target. All four configs live in `config/` and can be used with the CLI directly (e.g. `python -m lela.cli --config config/quickstart.json --input docs/file1.txt`).
 
-If you encounter issues, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for solutions to common problems including:
-- PyTorch CUDA mismatch
-- vLLM installation failures
-- GPU memory issues
+| Use case | NER | Candidates | Reranker | Disambiguator | Hardware | Config |
+|---|---|---|---|---|---|---|
+| **Fast / instant demo** | `regex` | `fuzzy` | none | `first` | CPU only | [`config/quickstart.json`](config/quickstart.json) |
+| **Better NER, still CPU** | `gliner` | `bm25` | none | `first` | CPU | [`config/lela_bm25_only.json`](config/lela_bm25_only.json) |
+| **No vLLM, local LLM** | `gliner` | `fuzzy` | `cross_encoder` | `transformers` | 1× GPU (~10 GB) | [`config/test_gliner_fuzzy_ce_transformers.json`](config/test_gliner_fuzzy_ce_transformers.json) |
+| **Best quality** | `gliner` | `bm25` | `embedder_transformers` | `vllm` (Qwen3-4B) | 1× GPU (~20 GB) | [`config/lela_example.json`](config/lela_example.json) |
+| **API-only (no local GPU)** | `gliner` | `bm25` | none | `openai_api` | CPU + remote LLM | build your own — see [`docs/API.md`](docs/API.md) |
+
+Rough quality / cost trade-off:
+- `regex + fuzzy + first` works perfectly when mentions are canonical entity titles (e.g. "Albert Einstein"), and fails on ambiguous mentions (e.g. "Paris").
+- Adding `gliner` improves NER quality on noisy/typed text.
+- Adding a `dense` or `cross_encoder` reranker is the biggest quality jump when the KB is large (BM25/fuzzy top-1 isn't great by itself).
+- An LLM disambiguator (`vllm`, `transformers`, or `openai_api`) handles ambiguity from context — but costs the most.
+
+---
+
+## Usage
 
 ### CLI
 
-**Zero-config quickstart** — uses regex NER, fuzzy string-matching against entity titles, and the YAGO 4.5 KB (auto-downloaded on first run). No GPU, no model downloads:
-```bash
-python -m lela.cli \
-  --config config/quickstart.json \
-  --input data/test/sample_doc.txt \
-  --output outputs.jsonl
-```
-First run downloads YAGO (a few hundred MB) and builds the candidate index over it. Subsequent runs are fast — the index is cached under `.ner_cache/`.
-
-Works well when mentions are canonical entity titles (e.g. `Albert Einstein` → `yago:Albert_Einstein`). For ambiguous mentions you'll want a reranker + LLM disambiguator — see `config/lela_example.json`.
-
-With `uv`: `uv sync && uv run python -m lela.cli --config config/quickstart.json --input data/test/sample_doc.txt --output outputs.jsonl`
-
-**Custom config:**
-1) Prepare a JSONL knowledge base with fields: `id`, `title`, `description` (plus optional metadata).
-2) Create a config file, e.g. `config.json`:
-```json
-{
-  "loader": {"name": "pdf"},
-  "ner": {"name": "spacy", "params": {"model": "en_core_web_sm"}},
-  "candidate_generator": {"name": "bm25"},
-  "reranker": {"name": "none"},
-  "disambiguator": {"name": "first"},
-  "knowledge_base": {"name": "jsonl", "params": {"path": "kb.jsonl"}}
-}
-```
-3) Run:
 ```bash
 python -m lela.cli --config config.json --input docs/file1.pdf docs/file2.pdf --output outputs.jsonl
 ```
 
-## Python API
+Inputs can be `txt`, `pdf`, `docx`, `html`, `json`, or `jsonl`. Output is one JSONL document per input file with resolved entities, candidates, and metadata. See [`docs/CLI.md`](docs/CLI.md) for the full reference.
+
+### Python API
 
 `Lela` accepts a JSON-config path or a dict. Each pipeline stage takes a `name` and an optional `params` block.
 
@@ -120,49 +174,107 @@ lela = Lela(config)
 results = lela.run("docs/file1.txt")
 ```
 
-You can also load the config from disk:
+Omit the `knowledge_base` block entirely and LELA auto-downloads YAGO 4.5 on first run.
 
-```python
-lela = Lela("config.json")
-results = lela.run("docs/file1.txt", "docs/file2.txt")
+### Web UI
+
+Requires the `ui` extra (see [Install](#install)):
+
+```bash
+uv run python app.py        # or: python app.py
 ```
 
-If you omit the `knowledge_base` block entirely, LELA auto-downloads the YAGO 4.5 KB on first run.
+Open `http://localhost:7860` and configure the pipeline through the UI. See [`docs/WEB_APP.md`](docs/WEB_APP.md) for details.
+
+---
 
 ## Available components
-- Loaders: `text`, `json`, `jsonl`, `pdf`, `docx`, `html`
-- NER: `regex`, `spacy`, `gliner`
-- Candidate generators: `bm25`, `fuzzy`, `dense`, `openai_api_dense`
-- Rerankers: `none`, `cross_encoder`, `cross_encoder_vllm`, `embedder_transformers`, `embedder_vllm`, `vllm_api_client`, `llama_server`
-- Disambiguators: `first`, `vllm`, `transformers`, `openai_api`
-- Knowledge bases: `jsonl` (YAGO 4.5 auto-downloads when no `knowledge_base` block is set)
 
-## Recommended configurations
+- **Loaders:** `text`, `json`, `jsonl`, `pdf`, `docx`, `html`
+- **NER:** `regex`, `spacy`, `gliner`
+- **Candidate generators:** `bm25`, `fuzzy`, `dense`, `openai_api_dense`
+- **Rerankers:** `none`, `cross_encoder`, `cross_encoder_vllm`, `embedder_transformers`, `embedder_vllm`, `vllm_api_client`, `llama_server`
+- **Disambiguators:** `first`, `vllm`, `transformers`, `openai_api`
+- **Knowledge bases:** `jsonl` (custom KB), `yago` (auto-downloads YAGO 4.5). Omitting the `knowledge_base` block entirely is equivalent to `"name": "yago"`.
 
-Pick a row that matches your hardware and quality target. All four configs live in `config/` and can be used with the CLI directly (e.g. `python -m lela.cli --config config/quickstart.json --input docs/file1.txt`).
+Full per-component reference: [`docs/PIPELINE.md`](docs/PIPELINE.md) · [`docs/API.md`](docs/API.md)
 
-| Use case | NER | Candidates | Reranker | Disambiguator | Hardware | Config |
-|---|---|---|---|---|---|---|
-| **Fast / instant demo** | `regex` | `fuzzy` | none | `first` | CPU only | [`config/quickstart.json`](config/quickstart.json) |
-| **Better NER, still CPU** | `gliner` | `bm25` | none | `first` | CPU (gliner is small) | [`config/lela_bm25_only.json`](config/lela_bm25_only.json) |
-| **No vLLM, local LLM** | `gliner` | `fuzzy` | `cross_encoder` | `transformers` | 1× GPU (~10 GB) | [`config/test_gliner_fuzzy_ce_transformers.json`](config/test_gliner_fuzzy_ce_transformers.json) |
-| **Best quality** | `gliner` | `bm25` (+context) | `embedder_transformers` | `vllm` (Qwen3-4B) | 1× GPU (~20 GB) | [`config/lela_example.json`](config/lela_example.json) |
-| **API-only (no local GPU)** | `gliner` | `bm25` | none | `openai_api` | CPU + remote LLM | build your own — see `docs/API.md` |
+---
 
-Rough quality / cost trade-off:
-- `regex + fuzzy + first` works perfectly when mentions are canonical entity titles (e.g. "Albert Einstein"), and fails on ambiguous mentions (e.g. "Paris").
-- Adding `gliner` improves NER quality on noisy/typed text.
-- Adding a `dense` or `cross_encoder` reranker is the biggest quality jump when the KB is large (BM25/fuzzy top-1 isn't great by itself).
-- An LLM disambiguator (`vllm`, `transformers`, or `openai_api`) handles ambiguity from context — but costs the most.
+## Output format
+
+Each line of the output JSONL contains one document:
+
+```json
+{
+  "id": "sample_doc",
+  "text": "Albert Einstein was born in Germany. ...",
+  "entities": [
+    {
+      "text": "Albert Einstein",
+      "start": 0, "end": 15,
+      "label": "ENT",
+      "context": "Albert Einstein was born in Germany.",
+      "entity_id": "yago:Albert_Einstein",
+      "entity_title": "Albert_Einstein",
+      "entity_description": "...",
+      "candidates": [{"entity_id": "...", "score": 1.0, "description": "..."}, ...]
+    }
+  ],
+  "meta": {"source": "data/test/sample_doc.txt"}
+}
+```
+
+Cache is keyed by file path, mtime, and size, and lives in `.ner_cache/`.
+
+---
 
 ## Conversion utilities
+
 - YAGO labels TSV → JSONL KB:
   ```bash
   python -m lela.scripts.convert_yago_labels data/kb/yagoLabels.tsv data/kb/yago_labels_en.jsonl
   ```
 
-## Notes
-- Outputs are JSONL (one line per document with resolved entities).
-  - Each line: `id`, `text`, `entities` (with `text`, `start`, `end`, `label`, `entity_id`, `entity_title`, `entity_description`, `candidates`).
-- Cache lives in `.ner_cache/` keyed by file path, mtime, and size.
-- No dependency on LELA; integration would be optional if added later.
+---
+
+## Documentation
+
+- [`docs/PIPELINE.md`](docs/PIPELINE.md) — component architecture and the spaCy integration.
+- [`docs/API.md`](docs/API.md) — Python API and component config reference.
+- [`docs/CLI.md`](docs/CLI.md) — command-line reference and example configs.
+- [`docs/WEB_APP.md`](docs/WEB_APP.md) — Gradio web UI.
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — installation and runtime issues.
+- [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — hardware sizing.
+- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — contributing.
+
+---
+
+## Citation
+
+If you use LELA in your research, please cite:
+
+```bibtex
+@inproceedings{lela2026,
+  title     = {LELA: An End-to-End LLM-based Entity Linking Framework with Zero-shot Domain Aadaptation},
+  author    = {Samy Haffoudhi , Nikola Dobričić , Fabian Suchanek , Nils Holzenberger},
+  booktitle = {35th International Joint Conference on Artificial Intelligence (IJCAI-ECAI 2026)},
+  year      = {2026},
+  url       = {https://hal.science/hal-05633154}
+}
+```
+
+## Authors
+
+- **Samy Haffoudhi** — [@samyhaff](https://samyhaff.github.io/)
+- **Nikola Dobričić** — [@nikoladobricic](https://github.com/NDobricic)
+- **Fabian Suchanek** — [@fabian_suchanek](https://suchanek.name/)
+- **Nils Holzenberger** — [@nils_holzenberger](https://perso.telecom-paristech.fr/holzenberger/)
+
+## Acknowledgements
+
+LELA is part of the [YAGO knowledge graph ecosystem](https://yago-knowledge.org).
+
+## License
+
+LELA is licensed under the [Apache License 2.0](LICENSE).

@@ -354,7 +354,7 @@ LELA components use the `jsonl` knowledge base.
 {
   "name": "jsonl",
   "params": {
-    "path": "entities.jsonl"
+    "path": "data/yago/yago-entities.jsonl"
   }
 }
 ```
