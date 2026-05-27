@@ -801,7 +801,7 @@ for result in results:
 from lela.knowledge_bases.jsonl import JSONLKnowledgeBase
 
 # Load knowledge base
-kb = JSONLKnowledgeBase(path="entities.jsonl")
+kb = JSONLKnowledgeBase(path="data/yago/yago-entities.jsonl")  # or any JSONL KB
 
 # Get entity by ID
 entity = kb.get_entity("Q937")
@@ -848,7 +848,7 @@ config_dict = {
     },
     "knowledge_base": {
         "name": "jsonl",
-        "params": {"path": "entities.jsonl"}
+        "params": {"path": "data/yago/yago-entities.jsonl"}
     }
 }
 ```

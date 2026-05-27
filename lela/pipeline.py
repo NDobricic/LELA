@@ -63,6 +63,36 @@ DISAMBIGUATOR_COMPONENT_MAP = {
 }
 
 
+def _maybe_print_minimal_config_hint(config: PipelineConfig) -> None:
+    """If the user is running the smallest possible config, print a friendly
+    hint telling them what they're getting and what they could upgrade to.
+    Stays silent for any non-minimal config so it doesn't spam advanced users.
+    """
+    import sys
+
+    is_minimal = (
+        config.ner.name == "regex"
+        and config.candidate_generator.name == "fuzzy"
+        and (config.reranker is None or config.reranker.name == "none")
+        and (config.disambiguator is None or config.disambiguator.name == "first")
+    )
+    if not is_minimal:
+        return
+
+    print(
+        "\nRunning LELA in its simplest configuration "
+        "(regex NER + fuzzy candidates + first-pick disambiguator).\n"
+        "This is great for canonical mentions like 'Albert Einstein' but will\n"
+        "struggle with ambiguous mentions. For better results, try:\n"
+        "  - config/lela_bm25_only.json          (GLiNER + BM25, still CPU)\n"
+        "  - config/test_gliner_fuzzy_ce_transformers.json   (+ cross-encoder + LLM, 1 GPU)\n"
+        "  - config/lela_example.json            (full pipeline with vLLM, best quality)\n"
+        "See the 'Recommended configurations' section of the README for a full overview.\n",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 class ELPipeline:
     """
     Orchestrates the modular LELA using spaCy.
@@ -90,6 +120,8 @@ class ELPipeline:
         def check_cancelled():
             if cancel_event and cancel_event.is_set():
                 raise InterruptedError("Pipeline initialization cancelled")
+
+        _maybe_print_minimal_config_hint(config)
 
         report(0.0, "Loading knowledge base...")
         check_cancelled()

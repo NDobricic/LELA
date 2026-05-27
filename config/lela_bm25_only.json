@@ -14,8 +14,7 @@
   "candidate_generator": {
     "name": "bm25",
     "params": {
-      "top_k": 64,
-      "use_context": true
+      "top_k": 64
     }
   },
   "reranker": {
@@ -27,9 +26,6 @@
     "params": {}
   },
   "knowledge_base": {
-    "name": "jsonl",
-    "params": {
-      "path": "entities.jsonl"
-    }
+    "name": "yago"
   }
 }

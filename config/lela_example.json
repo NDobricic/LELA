@@ -14,9 +14,7 @@
   "candidate_generator": {
     "name": "bm25",
     "params": {
-      "top_k": 64,
-      "use_context": true,
-      "stemmer_language": "english"
+      "top_k": 64
     }
   },
   "reranker": {
@@ -37,9 +35,6 @@
     }
   },
   "knowledge_base": {
-    "name": "jsonl",
-    "params": {
-      "path": "entities.jsonl"
-    }
+    "name": "yago"
   }
 }

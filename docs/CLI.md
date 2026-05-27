@@ -186,7 +186,7 @@ The configuration names map to spaCy component factories:
   },
   "knowledge_base": {
     "name": "jsonl",
-    "params": {"path": "entities.jsonl"}
+    "params": {"path": "data/yago/yago-entities.jsonl"}
   }
 }
 ```
