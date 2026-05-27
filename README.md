@@ -17,14 +17,14 @@
 
 ## Why LELA
 
-Entity linking — finding and mapping mentions in text to their corresponding entities in a Knowledge Base — usually means stitching together different tools that are often limited to linking to Wikipedia. **LELA replaces that with a single config file.** Five swappable stages (loader → NER → candidate generation → reranking → disambiguation) plus a pluggable knowledge base, all wired into one Python class or one CLI call.
+Entity linking — finding and mapping mentions in text to their corresponding entities in a Knowledge Base (KB) — usually means stitching together different tools that are often limited to linking to Wikipedia. **LELA replaces that with a single config file.** Five swappable stages (loader → NER → candidate generation → reranking → disambiguation) plus a pluggable knowledge base, all wired into one Python class or one CLI call.
 
 ```text
   ┌────────┐   ┌──────┐   ┌────────────┐   ┌──────────┐   ┌──────────────┐   ┌──────────┐
   │  text  │ → │ NER  │ → │ candidates │ → │ reranker │ → │ disambiguator│ → │ entities │
   └────────┘   └──────┘   └────────────┘   └──────────┘   └──────────────┘   └──────────┘
-                              ▲                                  ▲
-                              └─── knowledge base (Custom / YAGO 4.5) ────┘
+                              ▲                                   ▲
+                              └────── KB (Custom/YAGO 4.5) ───────┘
 ```
 
 **Highlights**
