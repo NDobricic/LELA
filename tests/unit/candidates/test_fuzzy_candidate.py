@@ -6,7 +6,7 @@ from spacy.tokens import Span
 
 from lela import spacy_components  # Register factories
 from lela.spacy_components.candidates import FuzzyCandidatesComponent
-from lela._types import Candidate, Entity
+from lela import Candidate, Entity
 
 from tests.conftest import MockKnowledgeBase
 

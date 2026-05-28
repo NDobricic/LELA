@@ -13,7 +13,7 @@ import pytest
 import spacy
 from spacy.tokens import Span
 
-from lela._types import Candidate, Entity
+from lela import Candidate, Entity
 from lela.knowledge_bases.jsonl import JSONLKnowledgeBase
 
 
@@ -27,7 +27,7 @@ class TestSentenceTransformerPool:
 
     def test_get_sentence_transformer_instance_loads_model(self):
         """Test that get_sentence_transformer_instance actually loads a model."""
-        from lela.lela.llm_pool import (
+        from lela.llm_pool import (
             get_sentence_transformer_instance,
             clear_sentence_transformer_instances,
         )
@@ -43,7 +43,7 @@ class TestSentenceTransformerPool:
 
     def test_model_can_encode_texts(self):
         """Test that the loaded model can encode texts."""
-        from lela.lela.llm_pool import get_sentence_transformer_instance
+        from lela.llm_pool import get_sentence_transformer_instance
 
         model, _ = get_sentence_transformer_instance(TEST_MODEL)
 
@@ -56,7 +56,7 @@ class TestSentenceTransformerPool:
 
     def test_model_embeddings_are_meaningful(self):
         """Test that embeddings capture semantic similarity."""
-        from lela.lela.llm_pool import get_sentence_transformer_instance
+        from lela.llm_pool import get_sentence_transformer_instance
 
         model, _ = get_sentence_transformer_instance(TEST_MODEL)
 
@@ -77,7 +77,7 @@ class TestSentenceTransformerPool:
 
     def test_singleton_returns_same_instance(self):
         """Test that the same model instance is returned."""
-        from lela.lela.llm_pool import (
+        from lela.llm_pool import (
             get_sentence_transformer_instance,
             clear_sentence_transformer_instances,
         )
@@ -112,7 +112,7 @@ class TestLELAEmbedderRerankerIntegration:
 
     def test_reranker_sorts_by_semantic_similarity(self, nlp, sample_candidates):
         """Test that reranker sorts candidates by semantic similarity."""
-        from lela.lela.llm_pool import clear_sentence_transformer_instances
+        from lela.llm_pool import clear_sentence_transformer_instances
         from lela.spacy_components.rerankers import LELAEmbedderRerankerComponent
 
         clear_sentence_transformer_instances(force=True)
@@ -143,7 +143,7 @@ class TestLELAEmbedderRerankerIntegration:
 
     def test_reranker_assigns_similarity_scores(self, nlp):
         """Test that reranker assigns meaningful similarity scores."""
-        from lela.lela.llm_pool import clear_sentence_transformer_instances
+        from lela.llm_pool import clear_sentence_transformer_instances
         from lela.spacy_components.rerankers import LELAEmbedderRerankerComponent
 
         clear_sentence_transformer_instances(force=True)
@@ -236,7 +236,7 @@ class TestLELADenseCandidatesIntegration:
 
     def test_dense_candidates_returns_semantically_similar(self, nlp, kb):
         """Test that dense retrieval returns semantically similar candidates."""
-        from lela.lela.llm_pool import clear_sentence_transformer_instances
+        from lela.llm_pool import clear_sentence_transformer_instances
         from lela.spacy_components.candidates import LELADenseCandidatesComponent
 
         clear_sentence_transformer_instances(force=True)
@@ -266,7 +266,7 @@ class TestLELADenseCandidatesIntegration:
 
     def test_dense_candidates_uses_context(self, nlp, kb):
         """Test that context improves retrieval results."""
-        from lela.lela.llm_pool import clear_sentence_transformer_instances
+        from lela.llm_pool import clear_sentence_transformer_instances
         from lela.spacy_components.candidates import LELADenseCandidatesComponent
         from spacy.tokens import Span as SpacySpan
 
@@ -302,7 +302,7 @@ class TestLELADenseCandidatesIntegration:
 
     def test_dense_candidates_assigns_scores(self, nlp, kb):
         """Test that candidates have similarity scores."""
-        from lela.lela.llm_pool import clear_sentence_transformer_instances
+        from lela.llm_pool import clear_sentence_transformer_instances
         from lela.spacy_components.candidates import LELADenseCandidatesComponent
 
         clear_sentence_transformer_instances(force=True)
@@ -350,7 +350,7 @@ class TestLELADenseCandidatesIntegration:
 
     def test_index_built_correctly(self, nlp, kb):
         """Test that the FAISS index is built with correct dimensions."""
-        from lela.lela.llm_pool import clear_sentence_transformer_instances
+        from lela.llm_pool import clear_sentence_transformer_instances
         from lela.spacy_components.candidates import LELADenseCandidatesComponent
 
         clear_sentence_transformer_instances(force=True)

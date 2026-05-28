@@ -7,7 +7,7 @@ import tempfile
 import pytest
 
 from lela.knowledge_bases.jsonl import JSONLKnowledgeBase
-from lela._types import Entity
+from lela import Entity
 
 
 class TestJSONLKnowledgeBase:

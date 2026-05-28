@@ -10,7 +10,7 @@ import numpy as np
 import spacy
 from spacy.tokens import Span
 
-from lela._types import Candidate, Document, Mention
+from lela import Candidate, Document, Mention
 from lela.knowledge_bases.jsonl import JSONLKnowledgeBase
 
 

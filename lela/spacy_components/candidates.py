@@ -20,13 +20,13 @@ from spacy.language import Language
 from spacy.tokens import Doc, Span
 
 from lela.knowledge_bases.base import KnowledgeBase
-from lela.lela.config import (
+from lela.defaults import (
     CANDIDATES_TOP_K,
     DEFAULT_EMBEDDER_MODEL,
     RETRIEVER_TASK,
     get_model_vram_gb,
 )
-from lela.lela.llm_pool import (
+from lela.llm_pool import (
     get_sentence_transformer_instance,
     release_sentence_transformer,
 )

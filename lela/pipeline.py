@@ -281,15 +281,24 @@ class ELPipeline:
         return hashlib.sha256(raw).hexdigest()
 
     def _load_with_cache(self, path: str) -> Iterator[Document]:
-        """Load documents from path with caching."""
+        """Load documents from path with caching. Falls back to a clean
+        re-load (and overwrites the cache) if the pickle file references
+        classes that no longer exist — e.g. after a module rename.
+        """
         key = self._cache_key(path)
         cache_file = self.cache_dir / f"{key}.pkl"
         if cache_file.exists():
-            with cache_file.open("rb") as f:
-                cached = pickle.load(f)
-            for doc in cached:
-                yield doc
-            return
+            try:
+                with cache_file.open("rb") as f:
+                    cached = pickle.load(f)
+                for doc in cached:
+                    yield doc
+                return
+            except (ModuleNotFoundError, AttributeError, ImportError) as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Stale doc cache at %s (%s); rebuilding.", cache_file, e
+                )
 
         docs = list(self.loader.load(path))
         with cache_file.open("wb") as f:

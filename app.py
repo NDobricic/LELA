@@ -24,7 +24,7 @@ _cancel_event = threading.Event()
 
 from lela import Lela
 from lela.memory import get_system_resources
-from lela.lela.config import (
+from lela.defaults import (
     AVAILABLE_LLM_MODELS as LLM_MODEL_CHOICES,
     AVAILABLE_EMBEDDING_MODELS as EMBEDDING_MODEL_CHOICES,
     AVAILABLE_CROSS_ENCODER_MODELS as CROSS_ENCODER_MODEL_CHOICES,
@@ -35,7 +35,7 @@ from lela.lela.config import (
     DEFAULT_MAX_MODEL_LEN,
     get_model_vram_gb,
 )
-from lela.lela.llm_pool import clear_all_models
+from lela.llm_pool import clear_all_models
 
 TITLE_HTML = """
 <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:4px;">
@@ -1059,7 +1059,7 @@ def update_loader_from_file(file: Optional[gr.File]):
 
 def compute_memory_estimate() -> str:
     """Show GPU info, cached models, and cached KBs."""
-    from lela.lela.llm_pool import get_cached_models_info
+    from lela.llm_pool import get_cached_models_info
     from lela.knowledge_bases.jsonl import get_kb_cache_info
 
     try:

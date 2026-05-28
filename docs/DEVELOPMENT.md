@@ -129,7 +129,7 @@ for doc in loader.load("data.csv"):
 | `jsonl` | `JSONLLoader` | `lela/loaders/text.py` |
 | `pdf` | `PDFLoader` | `lela/loaders/pdf.py` |
 | `docx` | `DocxLoader` | `lela/loaders/docx.py` |
-| `html` | `HTMLLoader` | `lela/loaders/html.py` |
+| `html` | `HTMLLoader` | `lela/loaders/html_loader.py` |
 
 ---
 

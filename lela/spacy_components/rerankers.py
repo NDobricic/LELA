@@ -19,7 +19,7 @@ import numpy as np
 from spacy.language import Language
 from spacy.tokens import Doc, Span
 
-from lela.lela.config import (
+from lela.defaults import (
     RERANKER_TOP_K,
     DEFAULT_EMBEDDER_MODEL,
     DEFAULT_VLLM_RERANKER_MODEL,
@@ -30,7 +30,7 @@ from lela.lela.config import (
     CROSS_ENCODER_SUFFIX,
     get_model_vram_gb,
 )
-from lela.lela.llm_pool import (
+from lela.llm_pool import (
     get_sentence_transformer_instance,
     release_sentence_transformer,
     get_vllm_instance,

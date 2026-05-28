@@ -9,7 +9,7 @@ from typing import Optional
 
 from spacy.tokens import Doc, Span
 
-from lela.lela.config import SPAN_OPEN, SPAN_CLOSE
+from lela.defaults import SPAN_OPEN, SPAN_CLOSE
 
 
 def build_marked_text(doc: Doc, ent: Span, context_window: int = 0) -> str:

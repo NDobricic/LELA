@@ -18,7 +18,7 @@ from spacy.language import Language
 from spacy.tokens import Doc, Span
 
 from lela.context import extract_context
-from lela.lela.config import (
+from lela.defaults import (
     DEFAULT_GLINER_MODEL,
     DEFAULT_GLINER_VRAM_GB,
     NER_LABELS,
@@ -114,7 +114,7 @@ class LELAGLiNERComponent:
     def _ensure_model_loaded(self):
         if self.model is not None:
             return
-        from lela.lela.llm_pool import get_generic_instance
+        from lela.llm_pool import get_generic_instance
 
         key = f"gliner:{self.model_name}"
 
@@ -213,7 +213,7 @@ class LELAGLiNERComponent:
                 f"Extracted {len(doc.ents)} entities from document ({len(text)} chars)"
             )
         finally:
-            from lela.lela.llm_pool import release_generic
+            from lela.llm_pool import release_generic
 
             release_generic(f"gliner:{self.model_name}")
             self.model = None
@@ -360,7 +360,7 @@ class GLiNERComponent:
     def _ensure_model_loaded(self):
         if self.model is not None:
             return
-        from lela.lela.llm_pool import get_generic_instance
+        from lela.llm_pool import get_generic_instance
 
         key = f"gliner:{self.model_name}"
 
@@ -405,7 +405,7 @@ class GLiNERComponent:
 
             doc.ents = filter_spans(spans)
         finally:
-            from lela.lela.llm_pool import release_generic
+            from lela.llm_pool import release_generic
 
             release_generic(f"gliner:{self.model_name}")
             self.model = None

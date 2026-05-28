@@ -2,7 +2,7 @@
 
 import pytest
 
-from lela.lela import config
+from lela import defaults as config
 
 
 class TestLELAConfig:

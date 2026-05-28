@@ -2,7 +2,7 @@
 
 import pytest
 
-from lela._types import Candidate, Document, Entity, Mention, ResolvedMention
+from lela import Candidate, Document, Entity, Mention, ResolvedMention
 
 
 class TestDocument:
