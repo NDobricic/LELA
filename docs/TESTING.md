@@ -177,7 +177,7 @@ pytest tests/ -n 4  # Use 4 workers
 """Tests for the document loader module."""
 
 import pytest
-from lela.types import Document
+from lela import Document
 from lela.loaders.text import TextLoader
 
 
