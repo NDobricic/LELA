@@ -7,7 +7,7 @@ from lela.lela.prompts import (
     create_disambiguation_messages,
     mark_mention_in_text,
 )
-from lela.types import Candidate
+from lela._types import Candidate
 
 
 class TestDefaultSystemPrompt:

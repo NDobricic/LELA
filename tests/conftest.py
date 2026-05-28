@@ -8,7 +8,7 @@ from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 import pytest
 
-from lela.types import Candidate, Document, Entity, Mention, ResolvedMention
+from lela._types import Candidate, Document, Entity, Mention, ResolvedMention
 
 
 # ---------------------------------------------------------------------------

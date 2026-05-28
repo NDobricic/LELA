@@ -1,6 +1,6 @@
 from typing import Iterator, Protocol
 
-from lela.types import Document
+from lela._types import Document
 
 
 class DocumentLoader(Protocol):

@@ -6,7 +6,7 @@ from spacy.tokens import Span
 
 from lela import spacy_components  # Register factories
 from lela.spacy_components.disambiguators import FirstDisambiguatorComponent
-from lela.types import Candidate, Entity
+from lela._types import Candidate, Entity
 
 from tests.conftest import MockKnowledgeBase
 

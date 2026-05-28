@@ -4,7 +4,7 @@ from typing import Iterator
 import pdfplumber
 
 from lela.registry import loaders
-from lela.types import Document
+from lela._types import Document
 
 
 @loaders.register("pdf")

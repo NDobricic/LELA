@@ -8,7 +8,7 @@ import time
 import pytest
 
 from lela import Lela
-from lela.types import Document
+from lela._types import Document
 
 
 @pytest.mark.integration

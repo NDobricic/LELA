@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Iterator
 
 from lela.registry import loaders
-from lela.types import Document
+from lela._types import Document
 
 
 @loaders.register("text")

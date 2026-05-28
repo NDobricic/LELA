@@ -6,7 +6,7 @@ import pytest
 import spacy
 from spacy.tokens import Span
 
-from lela.types import Candidate
+from lela._types import Candidate
 from lela.utils import ensure_candidates_extension
 
 

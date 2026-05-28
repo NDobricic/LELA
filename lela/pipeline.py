@@ -29,7 +29,7 @@ from .registry import (
     knowledge_bases,
     loaders,
 )
-from .types import Candidate, Document, ProgressCallback
+from ._types import Candidate, Document, ProgressCallback
 
 # Component name mapping from config names to spaCy factory names
 NER_COMPONENT_MAP = {

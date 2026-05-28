@@ -31,7 +31,7 @@ from lela.lela.llm_pool import (
     release_sentence_transformer,
 )
 from lela.utils import ensure_candidates_extension
-from lela.types import Candidate, ProgressCallback
+from lela._types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ import pytest
 import spacy
 from spacy.tokens import Span
 
-from lela.types import Candidate, Entity
+from lela._types import Candidate, Entity
 from lela.knowledge_bases.jsonl import JSONLKnowledgeBase
 
 

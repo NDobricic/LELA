@@ -12,7 +12,7 @@ import pytest
 import spacy
 
 from lela.knowledge_bases.jsonl import JSONLKnowledgeBase
-from lela.types import Entity
+from lela._types import Entity
 
 
 class TestLELADenseCache:

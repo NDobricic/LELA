@@ -43,7 +43,7 @@ from lela.utils import (
     ensure_resolved_entity_extension,
 )
 from lela.context import build_marked_text as _build_marked_text
-from lela.types import Candidate, ProgressCallback
+from lela._types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
