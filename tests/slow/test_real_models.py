@@ -73,7 +73,7 @@ class TestGLiNER:
         """LELA GLiNER processes long text with chunking."""
         try:
             from lela import Lela
-            from lela.types import Document
+            from lela._types import Document
         except ImportError:
             pytest.skip("lela not available")
 

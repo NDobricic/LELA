@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
     from lela.knowledge_bases.base import KnowledgeBase
-    from lela.types import Candidate
+    from lela._types import Candidate
 
 DEFAULT_SYSTEM_PROMPT = f"""You are an expert designed to disambiguate entities in text, taking into account the overall context and a list of entity candidates.
 You are provided with an input text that includes a full contextual narrative, the mention enclosed between the '[' and ']' characters, and a list of candidates, each preceded by an index number.

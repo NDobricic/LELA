@@ -41,7 +41,7 @@ from lela.lela.llm_pool import (
 from lela.memory import gb_to_vllm_fraction
 from lela.utils import ensure_candidates_extension
 from lela.context import build_marked_text
-from lela.types import Candidate, ProgressCallback
+from lela._types import Candidate, ProgressCallback
 
 logger = logging.getLogger(__name__)
 

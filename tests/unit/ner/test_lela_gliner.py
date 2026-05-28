@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import spacy
 
-from lela.types import Mention
+from lela._types import Mention
 
 
 class TestLELAGLiNERComponent:
