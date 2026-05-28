@@ -46,7 +46,7 @@ Loaders parse input files and yield `Document` objects.
 
 ```python
 from typing import Iterator
-from lela.types import Document
+from lela import Document
 
 class LoaderProtocol:
     def load(self, path: str) -> Iterator[Document]:
@@ -62,7 +62,7 @@ from pathlib import Path
 from typing import Iterator
 
 from lela.registry import loaders
-from lela.types import Document
+from lela import Document
 
 
 @loaders.register("csv")
@@ -129,7 +129,7 @@ for doc in loader.load("data.csv"):
 | `jsonl` | `JSONLLoader` | `lela/loaders/text.py` |
 | `pdf` | `PDFLoader` | `lela/loaders/pdf.py` |
 | `docx` | `DocxLoader` | `lela/loaders/docx.py` |
-| `html` | `HTMLLoader` | `lela/loaders/html.py` |
+| `html` | `HTMLLoader` | `lela/loaders/html_loader.py` |
 
 ---
 
@@ -141,7 +141,7 @@ Knowledge bases provide entity lookup and search functionality.
 
 ```python
 from typing import Dict, Iterable, List, Optional
-from lela.types import Entity
+from lela import Entity
 
 class KnowledgeBaseProtocol:
     def get_entity(self, entity_id: str) -> Optional[Entity]:
@@ -165,7 +165,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from lela.registry import knowledge_bases
-from lela.types import Entity
+from lela import Entity
 
 
 @knowledge_bases.register("sqlite")

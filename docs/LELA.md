@@ -495,9 +495,16 @@ key = SHA256(f"bm25:{kb.identity_hash}".encode()).hexdigest()
 
 ## LELA Module Structure
 
-**Location:** `lela/lela/`
+LELA's runtime modules live at the top of the `lela/` package:
 
-### `config.py`
+| Module | Purpose |
+|---|---|
+| `lela/defaults.py` | Default model IDs, VRAM estimates, span markers, generation config |
+| `lela/prompts.py` | LLM prompt templates and chat-message builders |
+| `lela/llm_pool.py` | Singleton pools for SentenceTransformer / vLLM / generic models |
+| `lela/_types.py` | Dataclasses (`Document`, `Mention`, `Candidate`, `Entity`, `ResolvedMention`) — re-exported via `from lela import …` |
+
+### `defaults.py`
 
 Default configuration values for LELA components.
 

@@ -2,12 +2,12 @@
 
 import pytest
 
-from lela.lela.prompts import (
+from lela.prompts import (
     DEFAULT_SYSTEM_PROMPT,
     create_disambiguation_messages,
     mark_mention_in_text,
 )
-from lela._types import Candidate
+from lela import Candidate
 
 
 class TestDefaultSystemPrompt:

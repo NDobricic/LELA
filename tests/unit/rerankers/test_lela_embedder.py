@@ -7,7 +7,7 @@ import numpy as np
 import spacy
 from spacy.tokens import Span
 
-from lela._types import Candidate, Document, Mention
+from lela import Candidate, Document, Mention
 
 
 class TestLELAEmbedderRerankerComponent:
@@ -226,7 +226,7 @@ class TestLELAEmbedderRerankerComponent:
     def test_initialization_with_custom_params(self, mock_get_st):
         import numpy as np
         from spacy.tokens import Span
-        from lela._types import Candidate
+        from lela import Candidate
         from lela.utils import ensure_candidates_extension
 
         ensure_candidates_extension()

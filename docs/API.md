@@ -411,14 +411,14 @@ Select first candidate.
 
 ## Data Types
 
-All core data types are defined in `lela/types.py`.
+All core data types are re-exported from the top-level package — import them with `from lela import Candidate, Document, Entity, Mention, ResolvedMention, ProgressCallback`. (Defined in `lela/_types.py`.)
 
 ### Document
 
 Represents an input document.
 
 ```python
-from lela.types import Document
+from lela import Document
 
 doc = Document(
     id="doc-001",
@@ -439,7 +439,7 @@ doc = Document(
 Represents an entity in the knowledge base.
 
 ```python
-from lela.types import Entity
+from lela import Entity
 
 entity = Entity(
     id="Q937",
@@ -462,7 +462,7 @@ entity = Entity(
 Represents a potential KB match for a mention.
 
 ```python
-from lela.types import Candidate
+from lela import Candidate
 
 candidate = Candidate(
     entity_id="Q937",
@@ -733,7 +733,7 @@ Models that ship a "thinking mode" in their chat template (Qwen3, Gemma-4, etc.)
 
 ```python
 from lela import Lela
-from lela.types import Document
+from lela import Document
 
 # Load configuration from JSON file
 lela = Lela("config.json")

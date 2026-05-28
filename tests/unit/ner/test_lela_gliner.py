@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import spacy
 
-from lela._types import Mention
+from lela import Mention
 
 
 class TestLELAGLiNERComponent:
@@ -15,7 +15,7 @@ class TestLELAGLiNERComponent:
     def nlp(self):
         return spacy.blank("en")
 
-    @patch("lela.lela.llm_pool.get_generic_instance")
+    @patch("lela.llm_pool.get_generic_instance")
     def test_initialization_defers_model_loading(self, mock_get_generic, nlp):
         """Model is NOT loaded at init time (deferred to __call__)."""
         from lela.spacy_components.ner import LELAGLiNERComponent
@@ -32,8 +32,8 @@ class TestLELAGLiNERComponent:
         mock_get_generic.assert_not_called()
 
     @patch("lela.spacy_components.ner._get_gliner")
-    @patch("lela.lela.llm_pool.get_generic_instance")
-    @patch("lela.lela.llm_pool.release_generic")
+    @patch("lela.llm_pool.get_generic_instance")
+    @patch("lela.llm_pool.release_generic")
     def test_call_returns_doc_with_entities(self, mock_release, mock_get_generic, mock_get_gliner, nlp):
         mock_model = MagicMock()
         mock_get_generic.return_value = (mock_model, False)
@@ -59,8 +59,8 @@ class TestLELAGLiNERComponent:
         assert doc.ents[0].text == "Barack Obama"
 
     @patch("lela.spacy_components.ner._get_gliner")
-    @patch("lela.lela.llm_pool.get_generic_instance")
-    @patch("lela.lela.llm_pool.release_generic")
+    @patch("lela.llm_pool.get_generic_instance")
+    @patch("lela.llm_pool.release_generic")
     def test_entity_has_correct_label(self, mock_release, mock_get_generic, mock_get_gliner, nlp):
         mock_model = MagicMock()
         mock_get_generic.return_value = (mock_model, False)
@@ -84,8 +84,8 @@ class TestLELAGLiNERComponent:
         assert doc.ents[0].label_ == "person"
 
     @patch("lela.spacy_components.ner._get_gliner")
-    @patch("lela.lela.llm_pool.get_generic_instance")
-    @patch("lela.lela.llm_pool.release_generic")
+    @patch("lela.llm_pool.get_generic_instance")
+    @patch("lela.llm_pool.release_generic")
     def test_entity_has_context_extension(self, mock_release, mock_get_generic, mock_get_gliner, nlp):
         mock_model = MagicMock()
         mock_get_generic.return_value = (mock_model, False)
@@ -110,8 +110,8 @@ class TestLELAGLiNERComponent:
         assert doc.ents[0]._.context is not None
 
     @patch("lela.spacy_components.ner._get_gliner")
-    @patch("lela.lela.llm_pool.get_generic_instance")
-    @patch("lela.lela.llm_pool.release_generic")
+    @patch("lela.llm_pool.get_generic_instance")
+    @patch("lela.llm_pool.release_generic")
     def test_extract_multiple_entities(self, mock_release, mock_get_generic, mock_get_gliner, nlp):
         mock_model = MagicMock()
         mock_get_generic.return_value = (mock_model, False)
@@ -138,8 +138,8 @@ class TestLELAGLiNERComponent:
         assert doc.ents[1].text == "United States"
 
     @patch("lela.spacy_components.ner._get_gliner")
-    @patch("lela.lela.llm_pool.get_generic_instance")
-    @patch("lela.lela.llm_pool.release_generic")
+    @patch("lela.llm_pool.get_generic_instance")
+    @patch("lela.llm_pool.release_generic")
     def test_extract_empty_text(self, mock_release, mock_get_generic, mock_get_gliner, nlp):
         from lela.spacy_components.ner import LELAGLiNERComponent
         component = LELAGLiNERComponent(
@@ -197,8 +197,8 @@ class TestLELAGLiNERComponent:
         assert component.context_mode == "window"
 
     @patch("lela.spacy_components.ner._get_gliner")
-    @patch("lela.lela.llm_pool.get_generic_instance")
-    @patch("lela.lela.llm_pool.release_generic")
+    @patch("lela.llm_pool.get_generic_instance")
+    @patch("lela.llm_pool.release_generic")
     def test_threshold_passed_to_predict(self, mock_release, mock_get_generic, mock_get_gliner, nlp):
         mock_model = MagicMock()
         mock_get_generic.return_value = (mock_model, False)
@@ -224,8 +224,8 @@ class TestLELAGLiNERComponent:
         )
 
     @patch("lela.spacy_components.ner._get_gliner")
-    @patch("lela.lela.llm_pool.get_generic_instance")
-    @patch("lela.lela.llm_pool.release_generic")
+    @patch("lela.llm_pool.get_generic_instance")
+    @patch("lela.llm_pool.release_generic")
     def test_releases_model_after_call(self, mock_release, mock_get_generic, mock_get_gliner, nlp):
         mock_model = MagicMock()
         mock_get_generic.return_value = (mock_model, False)

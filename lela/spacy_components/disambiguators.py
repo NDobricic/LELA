@@ -18,7 +18,7 @@ from spacy.language import Language
 from spacy.tokens import Doc, Span
 
 from lela.knowledge_bases.base import KnowledgeBase
-from lela.lela.config import (
+from lela.defaults import (
     DEFAULT_LLM_MODEL,
     DEFAULT_TENSOR_PARALLEL_SIZE,
     DEFAULT_MAX_MODEL_LEN,
@@ -27,11 +27,11 @@ from lela.lela.config import (
     SPAN_CLOSE,
     get_model_vram_gb,
 )
-from lela.lela.prompts import (
+from lela.prompts import (
     create_disambiguation_messages,
     DEFAULT_SYSTEM_PROMPT,
 )
-from lela.lela.llm_pool import (
+from lela.llm_pool import (
     get_vllm_instance,
     release_vllm,
     get_generic_instance,

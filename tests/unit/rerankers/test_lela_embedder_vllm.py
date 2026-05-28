@@ -7,7 +7,7 @@ import numpy as np
 import spacy
 from spacy.tokens import Span
 
-from lela._types import Candidate
+from lela import Candidate
 from lela.utils import ensure_candidates_extension
 
 
