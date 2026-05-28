@@ -13,11 +13,9 @@
 
 </div>
 
----
+## Entity Linking with LELA
 
-## Why LELA
-
-Entity linking — finding and mapping mentions in text to their corresponding entities in a Knowledge Base (KB) — usually means stitching together different tools that are often limited to linking to Wikipedia. **LELA replaces that with a single config file.** Five swappable stages (loader → NER → candidate generation → reranking → disambiguation) plus a pluggable knowledge base, all wired into one Python class or one CLI call.
+Entity linking is the task of finding and mapping mentions of entities in text (such as “Paris”) to their corresponding entities in a Knowledge Base (KB) (such as “[yago:Paris](https://yago-knowledge.org/resource/Paris)”). Entity linking usually proceeds in several steps:
 
 ```text
   ┌────────┐   ┌──────┐   ┌────────────┐   ┌──────────┐   ┌──────────────┐   ┌──────────┐
@@ -27,26 +25,47 @@ Entity linking — finding and mapping mentions in text to their corresponding e
                               └────── KB (Custom/YAGO 4.5) ───────┘
 ```
 
-**Highlights**
+These steps are often executed by tools that are limited to linking to Wikipedia. **LELA is a modular entity linking system that unites different tools for each step in one unified interface**. Each of the 5 steps (loader → NER → candidate generation → reranking → disambiguation), and even the KB can be chosen from a wide range of pre-configured sources -- with a single config file.
 
-- **Zero-config quickstart** — `git clone && uv sync && uv run python -m lela.cli ...` works on CPU with no model downloads. YAGO 4.5 fetches itself on first use.
-- **Bring your own KB** — any JSONL file with `id`, `title`, `description` plugs straight in.
-- **Mix and match** — regex/spaCy/GLiNER for NER, BM25/fuzzy/dense for candidates, cross-encoder/embedder rerankers, and vLLM / Hugging Face Transformers / OpenAI-compatible API disambiguators.
+LELA features: 
+- **A zero-config quickstart** — `git clone && uv sync && uv run python -m lela.cli ...` works on CPU with no model downloads. YAGO 4.5 fetches itself on first use.
+- **Compatibility with any KB** — any JSONL file with `id`, `title`, `description` plugs straight in.
+- **Choice of different modules** — regex/spaCy/GLiNER for NER, BM25/fuzzy/dense for candidates, cross-encoder/embedder rerankers, and vLLM / Hugging Face Transformers / OpenAI-compatible API disambiguators.
 - **Two interfaces** — Python API for embedding into your workflows, a Gradio web UI for hands-on exploration.
 - **CPU-friendly defaults, GPU when you need it** — vLLM is an optional extra; everything else runs on a laptop.
 
----
+## Installing LELA
 
-## Quickstart
+**Requirements:** Python ≥3.10. A GPU + CUDA 12.x are required only for the `vllm` extra (local LLM disambiguation/reranking).
+
+**Platform support:**
+- **Linux** — fully supported, including the `vllm` extra.
+- **macOS** — core + `ui` extra supported. `vllm` is not available; use `openai_api` disambiguator pointing at a remote server (or the `transformers` disambiguator for small models on CPU).
+- **Windows** — only the commmand line interface is supported
+
+**Installation**: Clone this repository or download it as a ZIP file and unzip it.
+
+### Linux
 
 ```bash
-git clone https://github.com/<your-org>/lela.git
 cd lela
-uv sync
+uv sync                            
+uv sync --extra ui                 # + Gradio web UI
+uv sync --extra vllm               # + local vLLM (needs CUDA)
+uv sync --all-extras               # everything
 uv run python -m lela.cli \
   --config config/quickstart.json \
   --input data/test/sample_doc.txt \
   --output outputs.jsonl
+```
+
+### Windows terminal
+
+```bash
+cd lela
+python -m pip install --upgrade pip
+python -m pip install -e .                  
+python -m lela.cli --config config/quickstart.json --input data/test/sample_doc.txt --output outputs.jsonl
 ```
 
 This runs on CPU with **no model downloads**. The first invocation fetches YAGO 4.5 (a few hundred MB; one-time, cached under `.ner_cache/`). On the sample document `"Albert Einstein was born in Germany. Marie Curie was a pioneering scientist."` you should see:
@@ -59,58 +78,11 @@ This runs on CPU with **no model downloads**. The first invocation fetches YAGO 
 
 For ambiguous mentions you'll want a heavier config — see the [recommended configurations](#recommended-configurations) below.
 
----
-
-## Install
-
-**Requirements:** Python ≥3.10. GPU + CUDA 12.x only required for the `vllm` extra (local LLM disambiguation/reranking).
-
-**Platform support:**
-- **Linux** — fully supported, including the `vllm` extra.
-- **macOS** — core + `ui` extra supported. `vllm` is not available; use `openai_api` disambiguator pointing at a remote server (or the `transformers` disambiguator for small models on CPU).
-- **Windows** — not officially tested; WSL2 is the recommended workaround.
-
-First, clone the repo:
-
-```bash
-git clone https://github.com/<your-org>/lela.git
-cd lela
-```
-
-### With `uv` (recommended on Linux/macOS)
-
-```bash
-uv sync                            # CLI + library only (CPU-friendly)
-uv sync --extra ui                 # + Gradio web UI
-uv sync --extra vllm               # + local vLLM (needs CUDA)
-uv sync --all-extras               # everything
-```
-
-Then prefix commands with `uv run` (e.g. `uv run python -m lela.cli ...`) — no need to activate the venv manually.
-
-> **Windows users:** `uv` workflows aren't tested on native Windows. Use the `pip` path below from a regular PowerShell / Command Prompt, or run everything inside WSL2 (where `uv` works as on Linux).
-
-### With `pip`
-
-```bash
-python3.10 -m venv .venv
-source .venv/bin/activate          # Linux/macOS
-# .venv\Scripts\activate           # Windows (PowerShell / cmd)
-
-python -m pip install --upgrade pip
-python -m pip install -e .                  # core
-python -m pip install -e ".[ui]"            # + web UI
-python -m pip install -e ".[vllm]"          # + local vLLM (Linux only)
-python -m pip install -e ".[ui,vllm]"       # both
-```
-
 A pinned core-only `requirements.txt` is also provided for environments where `pip install -e .` doesn't fit; install extras separately with `python -m pip install gradio` / `python -m pip install "vllm>=0.19.0"`.
 
----
+## Configuring LELA
 
-## Recommended configurations
-
-Pick a row that matches your hardware and quality target. All four configs live in `config/` and can be used with the CLI directly (e.g. `python -m lela.cli --config config/quickstart.json --input docs/file1.txt`).
+Pick a row that matches your hardware and quality target:
 
 | Use case | NER | Candidates | Reranker | Disambiguator | Hardware | Config |
 |---|---|---|---|---|---|---|
@@ -121,39 +93,16 @@ Pick a row that matches your hardware and quality target. All four configs live 
 | **Best quality** | `gliner` | `dense` (4B, +context) | `cross_encoder` (4B) | `vllm` (Qwen3-4B) | 1× GPU (~24+ GB) | [`config/lela_example.json`](config/lela_example.json) |
 | **API-only (no local GPU)** | `gliner` | `bm25` | none | `openai_api` | CPU + remote LLM | build your own — see [`docs/API.md`](docs/API.md) |
 
-> **Running with llama.cpp:** the `lela_strong_llamacpp.json` config expects `llama-server` (from [llama.cpp](https://github.com/ggml-org/llama.cpp)) to be running locally on port 8080. Start it before LELA, e.g.:
-> ```bash
-> llama-server -m models/Qwen3-4B-Instruct-Q4_K_M.gguf -c 8192 --port 8080
-> ```
-> The same config also works against any other OpenAI-compatible endpoint (Ollama, vLLM-as-server, Together, etc.) — just edit `base_url` and `model_name`.
-
 Rough quality / cost trade-off:
 - `regex + fuzzy + first` works perfectly when mentions are canonical entity titles (e.g. "Albert Einstein"), and fails on ambiguous mentions.
 - Adding `gliner` improves NER quality on noisy/typed text and supports custom entity labels.
 - Adding a `dense` or `cross_encoder` reranker is the biggest quality jump when the KB is large (BM25/fuzzy top-1 isn't great by itself).
 - An LLM disambiguator (`vllm`, `transformers`, or `openai_api`) handles ambiguity from context through LLM-based reasoning — but costs the most.
 
----
+The components can be configured either in a JSON configuration file or directly in Python.
 
-## Usage
-
-### CLI
-
-```bash
-python -m lela.cli --config config.json --input docs/file1.pdf docs/file2.pdf --output outputs.jsonl
-```
-
-Inputs can be `txt`, `pdf`, `docx`, `html`, `json`, or `jsonl`. Output is one JSONL document per input file with resolved entities, candidates, and metadata. See [`docs/CLI.md`](docs/CLI.md) for the full reference.
-
-### Python API
-
-`Lela` accepts a JSON-config path or a dict. Each pipeline stage takes a `name` and an optional `params` block.
-
-```python
-from lela import Lela
-
-# Choose each component of LELA
-config = {
+```json
+{
     "loader": {
         "name": "text"  # or: pdf, docx, html, jsonl, json
     },
@@ -169,22 +118,36 @@ config = {
         "name": "vllm",  # or: first, openai_api, transformers
         "params": {"model_name": "Qwen/Qwen3-4B"},
     },
-    "knowledge_base": {
+    "knowledge_base": { # omit entirely to default to YAGO 4.5
         "name": "jsonl",
         "params": {"path": "my_kb.jsonl"},
     },
 }
-lela = Lela(config)
+```
 
-# Run the pipeline on a document
+See here for a full per-component reference: [`docs/PIPELINE.md`](docs/PIPELINE.md) · [`docs/API.md`](docs/API.md)
+
+## Running LELA
+
+### Command line interface
+
+```bash
+python -m lela.cli --config config/quickstart.json --input data/test/sample_doc.txt --output outputs.jsonl
+```
+
+Replace the config file by your configuration file, and the input file by your input file.
+  
+### Python interface
+
+```Python
+config = { ... }   # see above
+lela = Lela(config)
 results = lela.run("docs/file1.txt")
 ```
 
-Omit the `knowledge_base` block entirely and LELA auto-downloads YAGO 4.5 on first run.
-
 ### Web UI
 
-Requires the `ui` extra (see [Install](#install)):
+Requires the `ui` extra (see [Install](#install)), and works only on Linux an MacOS:
 
 ```bash
 uv run python app.py        # or: python app.py
@@ -192,20 +155,12 @@ uv run python app.py        # or: python app.py
 
 Open `http://localhost:7860` and configure the pipeline through the UI. See [`docs/WEB_APP.md`](docs/WEB_APP.md) for details.
 
----
+### Conversion utilities
 
-## Available components
-
-- **Loaders:** `text`, `json`, `jsonl`, `pdf`, `docx`, `html`
-- **NER:** `regex`, `spacy`, `gliner`
-- **Candidate generators:** `bm25`, `fuzzy`, `dense`, `openai_api_dense`
-- **Rerankers:** `none`, `cross_encoder`, `cross_encoder_vllm`, `embedder_transformers`, `embedder_vllm`, `vllm_api_client`, `llama_server`
-- **Disambiguators:** `first`, `vllm`, `transformers`, `openai_api`
-- **Knowledge bases:** `jsonl` (custom KB), `yago` (auto-downloads YAGO 4.5). Omitting the `knowledge_base` block entirely is equivalent to `"name": "yago"`.
-
-Full per-component reference: [`docs/PIPELINE.md`](docs/PIPELINE.md) · [`docs/API.md`](docs/API.md)
-
----
+The following script will convert YAGO labels to a JSONL KB:
+  ```bash
+  python -m lela.scripts.convert_yago_labels data/kb/yagoLabels.tsv data/kb/yago_labels_en.jsonl
+  ```
 
 ## Output format
 
@@ -233,19 +188,10 @@ Each line of the output JSONL contains one document:
 
 Cache is keyed by file path, mtime, and size, and lives in `.ner_cache/`.
 
----
-
-## Conversion utilities
-
-- YAGO labels TSV → JSONL KB:
-  ```bash
-  python -m lela.scripts.convert_yago_labels data/kb/yagoLabels.tsv data/kb/yago_labels_en.jsonl
-  ```
-
----
-
 ## Documentation
 
+- [Full paper](https://arxiv.org/abs/2601.05192) — full description of the disambiguation method
+- [Demo paper](https://arxiv.org/abs/2605.26956) — full description of the pipeline
 - [`docs/PIPELINE.md`](docs/PIPELINE.md) — component architecture and the spaCy integration.
 - [`docs/API.md`](docs/API.md) — Python API and component config reference.
 - [`docs/CLI.md`](docs/CLI.md) — command-line reference and example configs.
@@ -254,7 +200,6 @@ Cache is keyed by file path, mtime, and size, and lives in `.ner_cache/`.
 - [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — hardware sizing.
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — contributing.
 
----
 
 ## Citation
 
@@ -279,7 +224,8 @@ If you use LELA in your research, please cite:
 
 ## Acknowledgements
 
-LELA is part of the [YAGO knowledge graph ecosystem](https://yago-knowledge.org).
+LELA is part of the [YAGO knowledge graph ecosystem](https://yago-knowledge.org). The work was partially supported by Agence de l’Innovation
+de Defense – AID - via Centre Interdisciplinaire d’Etudes pour la Defense et la Securite – CIEDS - (project 2024 - KB- LM).
 
 ## License
 
